@@ -146,6 +146,11 @@
           </div>
         </div>
       </div>
+      <!-- N/A Excluded Summary Note -->
+      <div id="statNaSummary" class="hidden mt-2 pt-2 border-t border-slate-800/50 text-[10px] text-slate-400 flex items-center justify-between">
+        <span>관리자 N/A(열외) 처리 부서: <strong id="statNaCount" class="text-slate-300">0</strong>곳</span>
+        <button onclick="setFilter('na')" class="text-sky-400 hover:underline">목록 보기</button>
+      </div>
     </div>
 
     <!-- 2. Unreported Departments Warning & Action Card (미보고 부서 전용 알림판) -->
@@ -186,7 +191,7 @@
     </div>
 
     <!-- Quick Filter Pills -->
-    <div class="grid grid-cols-4 gap-1 p-1 bg-slate-900 border border-slate-800 rounded-xl text-[11px]">
+    <div class="grid grid-cols-5 gap-1 p-1 bg-slate-900 border border-slate-800 rounded-xl text-[10px]">
       <button onclick="setFilter('unreported')" id="filterTabUnreported" class="py-1.5 rounded-lg font-bold bg-amber-600/30 text-amber-300 border border-amber-500/40 transition">
         미보고 (<span id="countPillUnreported">0</span>)
       </button>
@@ -195,6 +200,9 @@
       </button>
       <button onclick="setFilter('complete')" id="filterTabComplete" class="py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition">
         완료 (<span id="countPillComplete">0</span>)
+      </button>
+      <button onclick="setFilter('na')" id="filterTabNa" class="py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition">
+        N/A (<span id="countPillNa">0</span>)
       </button>
       <button onclick="setFilter('all')" id="filterTabAll" class="py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition">
         전체 (<span id="countPillAll">0</span>)
@@ -215,6 +223,54 @@
   </div>
 
 </main>
+
+  <!-- N/A (열외 처리) 설정 모달 -->
+  <div id="naModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-4 shadow-2xl space-y-3">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+        <div class="flex items-center gap-1.5 text-slate-200 font-bold text-xs">
+          <i data-lucide="ban" class="w-4 h-4 text-amber-400"></i>
+          <span id="naModalDeptTitle">부서 N/A(열외) 처리</span>
+        </div>
+        <button onclick="closeModal('naModal')" class="text-slate-400 hover:text-white p-1">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <p class="text-[11px] text-slate-400">
+        선택한 부서를 점호 대상에서 열외(N/A) 처리합니다. 미보고 독촉 명단에서 제외됩니다.
+      </p>
+
+      <div class="space-y-2 text-xs">
+        <label class="block font-semibold text-slate-300 text-[11px]">열외 사유 선택</label>
+        <div class="space-y-1.5">
+          <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700 cursor-pointer text-slate-200 text-xs">
+            <input type="radio" name="naReason" value="당일 전원 재택/외근/휴가" checked class="accent-amber-500">
+            <span>당일 전원 재택/외근/휴가 (사업장 재실 0명)</span>
+          </label>
+          <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700 cursor-pointer text-slate-200 text-xs">
+            <input type="radio" name="naReason" value="유선 통화 확인 완료(대피 완료)" class="accent-amber-500">
+            <span>유선 통화 확인 완료 (폼 미제출, 대피 확인됨)</span>
+          </label>
+          <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700 cursor-pointer text-slate-200 text-xs">
+            <input type="radio" name="naReason" value="custom" id="naReasonCustomRadio" class="accent-amber-500">
+            <span>직접 입력</span>
+          </label>
+        </div>
+        <input type="text" id="naCustomReasonInput" placeholder="기타 사유를 입력하세요 (예: 본사 파견)" 
+          class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-amber-500 hidden">
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="confirmNaDepartment()" class="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition active:scale-95">
+          N/A 처리 확정
+        </button>
+        <button onclick="closeModal('naModal')" class="px-3.5 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-medium">
+          취소
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- 119 Handover Briefing Modal (Mobile Optimized) -->
   <div id="briefingModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
@@ -332,6 +388,10 @@
   let drillStartTime = Date.now();
   let sheetUrl = localStorage.getItem('eoc_sheet_url') || '';
 
+  // N/A 처리된 부서 관리 (Key: deptName, Value: { reason: string, time: string })
+  let naDepartments = JSON.parse(localStorage.getItem('eoc_na_depts') || '{}');
+  let pendingNaDeptName = null;
+
   // 그룹 아코디언 상태 관리 (기본값: false - 축소 상태)
   let groupExpandedState = {};
 
@@ -369,103 +429,127 @@
     showToast("모의 점호 데이터가 로드되었습니다.");
   }
 
-    // 핵심 집계 및 미보고 부서 추출 로직
-    function calculateMetrics() {
-      let empTotal = 0, empDone = 0;
-      let guestTotal = 0, guestDone = 0;
-      let reportedCount = 0;
-      let missingPersonDepts = [];
-      let unreportedDepts = [];
-      let completedDepts = [];
+  // 핵심 집계 및 미보고 부서 추출 로직 (N/A 부서 예외 처리 포함)
+  function calculateMetrics() {
+    let empTotal = 0, empDone = 0;
+    let guestTotal = 0, guestDone = 0;
+    let reportedCount = 0;
+    let missingPersonDepts = [];
+    let unreportedDepts = [];
+    let completedDepts = [];
+    let naDeptsList = [];
 
-      STANDARD_DEPARTMENTS.forEach(std => {
-        const rec = departmentRecords[std.name];
-        if (rec) {
-          reportedCount++;
-          empTotal += rec.eTotal;
-          empDone += rec.eDone;
-          guestTotal += rec.gTotal;
-          guestDone += rec.gDone;
+    STANDARD_DEPARTMENTS.forEach(std => {
+      // 1. 관리자가 N/A 처리한 부서인 경우
+      if (naDepartments[std.name]) {
+        naDeptsList.push({
+          ...std,
+          naReason: naDepartments[std.name].reason,
+          naTime: naDepartments[std.name].time
+        });
+        return; // 통계 모수 및 미보고 목록에서 제외
+      }
 
-          const eMiss = Math.max(0, rec.eTotal - rec.eDone);
-          const gMiss = Math.max(0, rec.gTotal - rec.gDone);
+      const rec = departmentRecords[std.name];
+      if (rec) {
+        reportedCount++;
+        empTotal += rec.eTotal;
+        empDone += rec.eDone;
+        guestTotal += rec.gTotal;
+        guestDone += rec.gDone;
 
-          if (eMiss > 0 || gMiss > 0) {
-            missingPersonDepts.push({ ...rec, eMiss, gMiss });
-          } else {
-            completedDepts.push(rec);
-          }
+        const eMiss = Math.max(0, rec.eTotal - rec.eDone);
+        const gMiss = Math.max(0, rec.gTotal - rec.gDone);
+
+        if (eMiss > 0 || gMiss > 0) {
+          missingPersonDepts.push({ ...rec, eMiss, gMiss });
         } else {
-          unreportedDepts.push(std);
+          completedDepts.push(rec);
         }
-      });
+      } else {
+        unreportedDepts.push(std);
+      }
+    });
 
-      const totalPeople = empTotal + guestTotal;
-      const totalEvacuated = empDone + guestDone;
-      const overallRate = totalPeople > 0 ? Math.round((totalEvacuated / totalPeople) * 100) : 0;
-      const totalMissing = (empTotal - empDone) + (guestTotal - guestDone);
+    const activeTotalDepts = STANDARD_DEPARTMENTS.length - naDeptsList.length;
+    const totalPeople = empTotal + guestTotal;
+    const totalEvacuated = empDone + guestDone;
+    const overallRate = totalPeople > 0 ? Math.round((totalEvacuated / totalPeople) * 100) : 0;
+    const totalMissing = (empTotal - empDone) + (guestTotal - guestDone);
 
-      return {
-        empTotal, empDone, empMissing: Math.max(0, empTotal - empDone),
-        guestTotal, guestDone, guestMissing: Math.max(0, guestTotal - guestDone),
-        totalPeople, totalEvacuated, totalMissing,
-        overallRate,
-        reportedCount,
-        totalDepts: STANDARD_DEPARTMENTS.length,
-        unreportedDepts,
-        missingPersonDepts,
-        completedDepts
-      };
+    return {
+      empTotal, empDone, empMissing: Math.max(0, empTotal - empDone),
+      guestTotal, guestDone, guestMissing: Math.max(0, guestTotal - guestDone),
+      totalPeople, totalEvacuated, totalMissing,
+      overallRate,
+      reportedCount,
+      totalDepts: STANDARD_DEPARTMENTS.length,
+      activeTotalDepts,
+      naDeptsList,
+      unreportedDepts,
+      missingPersonDepts,
+      completedDepts
+    };
+  }
+
+  function renderAll() {
+    const metrics = calculateMetrics();
+
+    // 1. 점호 취합 지표 표시
+    document.getElementById('statOverallRate').innerText = `${metrics.overallRate}%`;
+    document.getElementById('statOverallFraction').innerText = `(${metrics.totalEvacuated} / ${metrics.totalPeople}명)`;
+    document.getElementById('statOverallBar').style.width = `${metrics.overallRate}%`;
+    
+    // N/A가 있을 경우 유효 모수 표시 (예: 9 / 18, 1개 N/A)
+    if (metrics.naDeptsList.length > 0) {
+      document.getElementById('statReportedRatio').innerText = `${metrics.reportedCount} / ${metrics.activeTotalDepts} (열외 ${metrics.naDeptsList.length})`;
+      document.getElementById('statNaSummary').classList.remove('hidden');
+      document.getElementById('statNaCount').innerText = metrics.naDeptsList.length;
+    } else {
+      document.getElementById('statReportedRatio').innerText = `${metrics.reportedCount} / ${metrics.totalDepts}`;
+      document.getElementById('statNaSummary').classList.add('hidden');
     }
 
-    function renderAll() {
-      const metrics = calculateMetrics();
+    // 미확인 인원
+    const totalMissingEl = document.getElementById('statTotalMissing');
+    totalMissingEl.innerText = `${metrics.totalMissing}명`;
+    if (metrics.totalMissing > 0) {
+      totalMissingEl.className = "text-xl font-bold text-red-400 animate-pulse";
+    } else {
+      totalMissingEl.className = "text-xl font-bold text-emerald-400";
+    }
 
-      // 1. 점호 취합 지표 표시
-      document.getElementById('statOverallRate').innerText = `${metrics.overallRate}%`;
-      document.getElementById('statOverallFraction').innerText = `(${metrics.totalEvacuated} / ${metrics.totalPeople}명)`;
-      document.getElementById('statOverallBar').style.width = `${metrics.overallRate}%`;
-      document.getElementById('statReportedRatio').innerText = `${metrics.reportedCount} / ${metrics.totalDepts}`;
+    // 서브 카운터 (임직원 vs 협력사)
+    document.getElementById('statEmpDone').innerText = metrics.empDone;
+    document.getElementById('statEmpTotal').innerText = metrics.empTotal;
+    const empBadge = document.getElementById('statEmpMissingBadge');
+    if (metrics.empMissing > 0) {
+      empBadge.innerText = `${metrics.empMissing}명 잔류`;
+      empBadge.className = "text-[10px] font-bold text-red-400";
+    } else {
+      empBadge.innerText = `전원완료`;
+      empBadge.className = "text-[10px] font-bold text-emerald-400";
+    }
 
-      // 미확인 인원
-      const totalMissingEl = document.getElementById('statTotalMissing');
-      totalMissingEl.innerText = `${metrics.totalMissing}명`;
-      if (metrics.totalMissing > 0) {
-        totalMissingEl.className = "text-xl font-bold text-red-400 animate-pulse";
-      } else {
-        totalMissingEl.className = "text-xl font-bold text-emerald-400";
-      }
+    document.getElementById('statGuestDone').innerText = metrics.guestDone;
+    document.getElementById('statGuestTotal').innerText = metrics.guestTotal;
+    const guestBadge = document.getElementById('statGuestMissingBadge');
+    if (metrics.guestMissing > 0) {
+      guestBadge.innerText = `${metrics.guestMissing}명 잔류`;
+      guestBadge.className = "text-[10px] font-bold text-amber-400";
+    } else {
+      guestBadge.innerText = `확인완료`;
+      guestBadge.className = "text-[10px] font-bold text-slate-400";
+    }
 
-      // 서브 카운터 (임직원 vs 협력사)
-      document.getElementById('statEmpDone').innerText = metrics.empDone;
-      document.getElementById('statEmpTotal').innerText = metrics.empTotal;
-      const empBadge = document.getElementById('statEmpMissingBadge');
-      if (metrics.empMissing > 0) {
-        empBadge.innerText = `${metrics.empMissing}명 잔류`;
-        empBadge.className = "text-[10px] font-bold text-red-400";
-      } else {
-        empBadge.innerText = `전원완료`;
-        empBadge.className = "text-[10px] font-bold text-emerald-400";
-      }
+    // 2. 미보고 부서 알림 영역 갱신
+    renderUnreportedSection(metrics.unreportedDepts);
 
-      document.getElementById('statGuestDone').innerText = metrics.guestDone;
-      document.getElementById('statGuestTotal').innerText = metrics.guestTotal;
-      const guestBadge = document.getElementById('statGuestMissingBadge');
-      if (metrics.guestMissing > 0) {
-        guestBadge.innerText = `${metrics.guestMissing}명 잔류`;
-        guestBadge.className = "text-[10px] font-bold text-amber-400";
-      } else {
-        guestBadge.innerText = `확인완료`;
-        guestBadge.className = "text-[10px] font-bold text-slate-400";
-      }
-
-      // 2. 미보고 부서 알림 영역 갱신
-      renderUnreportedSection(metrics.unreportedDepts);
-
-      // 필터 탭 숫자 갱신
+    // 필터 탭 숫자 갱신
     document.getElementById('countPillUnreported').innerText = metrics.unreportedDepts.length;
     document.getElementById('countPillMissing').innerText = metrics.missingPersonDepts.length;
     document.getElementById('countPillComplete').innerText = metrics.completedDepts.length;
+    document.getElementById('countPillNa').innerText = metrics.naDeptsList.length;
     document.getElementById('countPillAll').innerText = metrics.totalDepts;
 
     // 3. 상위부서 그룹 아코디언 카드 렌더링
@@ -474,463 +558,582 @@
     lucide.createIcons();
   }
 
-    // 미보고 부서 칩 표시
-    function renderUnreportedSection(unreportedList) {
-      const container = document.getElementById('unreportedListContainer');
-      const badgeCount = document.getElementById('unreportedBadgeCount');
-      const card = document.getElementById('unreportedCard');
+  // 미보고 부서 칩 표시
+  function renderUnreportedSection(unreportedList) {
+    const container = document.getElementById('unreportedListContainer');
+    const badgeCount = document.getElementById('unreportedBadgeCount');
+    const card = document.getElementById('unreportedCard');
 
-      badgeCount.innerText = unreportedList.length;
+    badgeCount.innerText = unreportedList.length;
 
-      if (unreportedList.length === 0) {
-        card.className = "bg-emerald-950/20 border border-emerald-500/40 rounded-2xl p-3 shadow-md space-y-1";
-        card.innerHTML = `
-          <div class="flex items-center gap-1.5 text-emerald-400 font-bold text-xs">
-            <i data-lucide="check-check" class="w-4 h-4"></i>
-            <span>모든 부서 (${STANDARD_DEPARTMENTS.length}개) 인원 점호 완료!</span>
-          </div>
-          <p class="text-[11px] text-emerald-200/80">
-            누락된 부서 없이 전 부서의 대피 현황 제출이 완료되었습니다.
-          </p>
-        `;
-        return;
-      }
-
-      container.innerHTML = '';
-      unreportedList.forEach(dept => {
-        const chip = document.createElement('span');
-        chip.className = "inline-flex items-center px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-medium";
-        chip.innerText = dept.name.replace(/\[.*?\]\s*/, '');
-        container.appendChild(chip);
-      });
+    if (unreportedList.length === 0) {
+      card.className = "bg-emerald-950/20 border border-emerald-500/40 rounded-2xl p-3 shadow-md space-y-1";
+      card.innerHTML = `
+        <div class="flex items-center gap-1.5 text-emerald-400 font-bold text-xs">
+          <i data-lucide="check-check" class="w-4 h-4"></i>
+          <span>모든 점호 대상 부서 인원 점호 완료!</span>
+        </div>
+        <p class="text-[11px] text-emerald-200/80">
+          누락된 부서 없이 모든 부서의 대피 현황 제출이 완료되었습니다.
+        </p>
+      `;
+      return;
     }
 
-    // 상위부서 단위 그룹 아코디언 렌더링
-    function renderDeptGroups() {
-      const container = document.getElementById('deptGroupContainer');
-      container.innerHTML = '';
+    card.className = "bg-amber-950/20 border border-amber-500/40 rounded-2xl p-3 shadow-md space-y-2.5";
+    card.innerHTML = `
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-1.5 text-amber-400 font-bold text-xs">
+          <i data-lucide="clock-alert" class="w-4 h-4 animate-pulse text-amber-400"></i>
+          <span>아직 미보고된 부서 (<span id="unreportedBadgeCount">${unreportedList.length}</span>곳)</span>
+        </div>
+        <button onclick="copyNudgeMessage()" class="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-medium flex items-center gap-1 transition active:scale-95">
+          <i data-lucide="copy" class="w-3 h-3"></i>
+          <span>독촉 톡 복사</span>
+        </button>
+      </div>
 
-      const query = searchQuery.trim().toLowerCase();
+      <p class="text-[11px] text-amber-200/80 leading-snug">
+        아래 부서는 아직 집결 현황을 제출하지 않았습니다. 단체채팅방을 통해 점호를 재촉하거나, 현장 확인 후 <strong>[N/A]</strong> 버튼으로 열외 처리할 수 있습니다.
+      </p>
 
-      // 상위 그룹별로 부서 묶기
-      const groupsMap = {};
-      STANDARD_DEPARTMENTS.forEach(dept => {
-        if (!groupsMap[dept.group]) {
-          groupsMap[dept.group] = [];
+      <div id="unreportedListContainer" class="flex flex-wrap gap-1.5 pt-1"></div>
+    `;
+
+    const newContainer = document.getElementById('unreportedListContainer');
+    unreportedList.forEach(dept => {
+      const chip = document.createElement('div');
+      chip.className = "inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-medium";
+      const cleanName = dept.name.replace(/\[.*?\]\s*/, '');
+      
+      chip.innerHTML = `
+        <span>${cleanName}</span>
+        <button onclick="openNaModal('${dept.name}')" title="열외/N/A 처리" class="ml-1 text-[10px] px-1 py-0.2 rounded bg-amber-600/40 hover:bg-amber-600/70 text-amber-200 border border-amber-400/40">
+          N/A
+        </button>
+      `;
+      newContainer.appendChild(chip);
+    });
+  }
+
+  // 상위부서 단위 그룹 아코디언 렌더링
+  function renderDeptGroups() {
+    const container = document.getElementById('deptGroupContainer');
+    container.innerHTML = '';
+
+    const query = searchQuery.trim().toLowerCase();
+
+    // 상위 그룹별로 부서 묶기
+    const groupsMap = {};
+    STANDARD_DEPARTMENTS.forEach(dept => {
+      if (!groupsMap[dept.group]) {
+        groupsMap[dept.group] = [];
+      }
+      groupsMap[dept.group].push(dept);
+    });
+
+    let totalVisibleGroups = 0;
+
+    Object.keys(groupsMap).forEach(groupName => {
+      const depts = groupsMap[groupName];
+
+      // 필터 및 검색 조건에 맞는 부서 추출
+      const filteredDepts = depts.filter(deptMeta => {
+        const isNa = !!naDepartments[deptMeta.name];
+        const rec = departmentRecords[deptMeta.name];
+        const isReported = !isNa && !!rec;
+        const eMiss = isReported ? Math.max(0, rec.eTotal - rec.eDone) : 0;
+        const gMiss = isReported ? Math.max(0, rec.gTotal - rec.gDone) : 0;
+        const hasMissing = isReported && (eMiss > 0 || gMiss > 0);
+
+        if (query && !deptMeta.name.toLowerCase().includes(query) && !deptMeta.group.toLowerCase().includes(query)) {
+          return false;
         }
-        groupsMap[dept.group].push(dept);
+
+        if (currentFilter === 'unreported' && (isNa || isReported)) return false;
+        if (currentFilter === 'missing' && (isNa || !isReported || !hasMissing)) return false;
+        if (currentFilter === 'complete' && (isNa || !isReported || hasMissing)) return false;
+        if (currentFilter === 'na' && !isNa) return false;
+
+        return true;
       });
 
-      let totalVisibleGroups = 0;
+      if (filteredDepts.length === 0) return;
+      totalVisibleGroups++;
 
-      Object.keys(groupsMap).forEach(groupName => {
-        const depts = groupsMap[groupName];
+      // 그룹 통계 계산
+      let groupTotalReported = 0;
+      let groupMissingPersons = 0;
+      let groupNaCount = 0;
 
-        // 필터 및 검색 조건에 맞는 부서 추출
-        const filteredDepts = depts.filter(deptMeta => {
+      depts.forEach(d => {
+        if (naDepartments[d.name]) {
+          groupNaCount++;
+          return;
+        }
+        const rec = departmentRecords[d.name];
+        if (rec) {
+          groupTotalReported++;
+          const m = Math.max(0, (rec.eTotal - rec.eDone) + (rec.gTotal - rec.gDone));
+          groupMissingPersons += m;
+        }
+      });
+
+      const groupActiveDepts = depts.length - groupNaCount;
+      const isExpanded = query.length > 0 || !!groupExpandedState[groupName];
+
+      const groupCard = document.createElement('div');
+      groupCard.className = "bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-sm transition";
+
+      const header = document.createElement('div');
+      header.className = "px-3.5 py-3 bg-[#111a2e] hover:bg-[#16213a] flex items-center justify-between cursor-pointer border-b border-slate-800/80 select-none transition";
+      header.onclick = () => toggleGroup(groupName);
+
+      let groupBadge = '';
+      if (groupMissingPersons > 0) {
+        groupBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/40">미확인 ${groupMissingPersons}명</span>`;
+      } else if (groupActiveDepts > 0 && groupTotalReported === groupActiveDepts) {
+        groupBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">전체 완료 (${groupTotalReported}/${groupActiveDepts})</span>`;
+      } else {
+        groupBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">보고 ${groupTotalReported}/${groupActiveDepts}</span>`;
+      }
+
+      header.innerHTML = `
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="w-5 h-5 rounded-lg flex items-center justify-center ${isExpanded ? 'bg-sky-500/20 text-sky-400' : 'bg-slate-800 text-slate-400'} text-xs font-bold font-mono">
+            ${isExpanded ? '−' : '+'}
+          </span>
+          <span class="font-extrabold text-xs text-white truncate">${groupName}</span>
+          <span class="text-[10px] text-slate-400 font-normal">(${depts.length}개 팀${groupNaCount > 0 ? `, N/A ${groupNaCount}` : ''})</span>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          ${groupBadge}
+          <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" class="w-3.5 h-3.5 text-slate-400"></i>
+        </div>
+      `;
+
+      groupCard.appendChild(header);
+
+      if (isExpanded) {
+        const body = document.createElement('div');
+        body.className = "p-2.5 space-y-2 bg-[#0b1220]/60";
+
+        filteredDepts.forEach(deptMeta => {
+          const isNa = !!naDepartments[deptMeta.name];
           const rec = departmentRecords[deptMeta.name];
-          const isReported = !!rec;
-          const eMiss = isReported ? Math.max(0, rec.eTotal - rec.eDone) : 0;
-          const gMiss = isReported ? Math.max(0, rec.gTotal - rec.gDone) : 0;
+          const isReported = !isNa && !!rec;
+          const eTotal = isReported ? rec.eTotal : 0;
+          const eDone = isReported ? rec.eDone : 0;
+          const gTotal = isReported ? rec.gTotal : 0;
+          const gDone = isReported ? rec.gDone : 0;
+          const eMiss = isReported ? Math.max(0, eTotal - eDone) : 0;
+          const gMiss = isReported ? Math.max(0, gTotal - gDone) : 0;
           const hasMissing = isReported && (eMiss > 0 || gMiss > 0);
 
-          if (query && !deptMeta.name.toLowerCase().includes(query) && !deptMeta.group.toLowerCase().includes(query)) {
-            return false;
+          const card = document.createElement('div');
+          let borderClass = "border-slate-800 bg-[#111a2e]";
+          let badgeHtml = '';
+
+          if (isNa) {
+            borderClass = "border-slate-700/60 bg-slate-900/60 opacity-80";
+            badgeHtml = `
+              <div class="flex items-center gap-1.5">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">N/A (열외)</span>
+                <button onclick="cancelNaDepartment('${deptMeta.name}')" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200">
+                  해제
+                </button>
+              </div>`;
+          } else if (!isReported) {
+            borderClass = "border-amber-500/40 bg-amber-950/20";
+            badgeHtml = `
+              <div class="flex items-center gap-1.5">
+                <button onclick="openNaModal('${deptMeta.name}')" class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30">
+                  N/A 처리
+                </button>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">미보고</span>
+              </div>`;
+          } else if (hasMissing) {
+            borderClass = "border-red-500/50 bg-red-950/25";
+            badgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-600/30 text-red-300 border border-red-500/50 animate-pulse">미확인 ${eMiss + gMiss}명</span>`;
+          } else {
+            badgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-400">완료</span>`;
           }
 
-          if (currentFilter === 'unreported' && isReported) return false;
-          if (currentFilter === 'missing' && (!isReported || !hasMissing)) return false;
-          if (currentFilter === 'complete' && (!isReported || hasMissing)) return false;
+          card.className = `p-2.5 rounded-xl border ${borderClass} shadow-sm space-y-2 transition`;
+          const cleanName = deptMeta.name.replace(/\[.*?\]\s*/, '');
 
-          return true;
-        });
-
-        // 표시할 하위 부서가 하나도 없으면 그룹 숨김
-        if (filteredDepts.length === 0) return;
-        totalVisibleGroups++;
-
-        // 그룹 통계 계산
-        let groupTotalReported = 0;
-        let groupMissingPersons = 0;
-        let groupEvac = 0;
-        let groupTotal = 0;
-
-        depts.forEach(d => {
-          const rec = departmentRecords[d.name];
-          if (rec) {
-            groupTotalReported++;
-            groupEvac += (rec.eDone + rec.gDone);
-            groupTotal += (rec.eTotal + rec.gTotal);
-            const m = Math.max(0, (rec.eTotal - rec.eDone) + (rec.gTotal - rec.gDone));
-            groupMissingPersons += m;
+          let statusDetailText = '';
+          if (isNa) {
+            statusDetailText = `<span class="text-amber-300/90 font-medium">사유: ${naDepartments[deptMeta.name].reason}</span> • 처리: ${naDepartments[deptMeta.name].time}`;
+          } else if (isReported) {
+            statusDetailText = `<span>보고자: <strong class="text-slate-200">${rec.submitter}</strong></span> • 접수: ${rec.updatedAt}`;
+          } else {
+            statusDetailText = `<span class="text-amber-400/80">아직 제출되지 않음</span>`;
           }
+
+          card.innerHTML = `
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <span class="font-bold text-xs text-slate-100 truncate">${cleanName}</span>
+                </div>
+                <div class="text-[10px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-2">
+                  ${statusDetailText}
+                </div>
+              </div>
+              <div class="flex-shrink-0">
+                ${badgeHtml}
+              </div>
+            </div>
+
+            <!-- Numbers Grid -->
+            <div class="grid grid-cols-2 gap-1.5 pt-1 text-[11px] font-mono">
+              <div class="bg-black/40 p-1.5 rounded-lg border border-slate-800/80 flex items-center justify-between">
+                <span class="text-slate-400 text-[10px]">임직원</span>
+                ${isNa ? '<span class="text-slate-500 font-sans text-[10px]">열외 (0명)</span>' : (isReported 
+                  ? `<span class="${eMiss > 0 ? 'text-red-400 font-bold' : 'text-slate-200'}">${eDone} / ${eTotal}명</span>`
+                  : `<span class="text-slate-500 font-sans text-[10px]">미제출</span>`)}
+              </div>
+              <div class="bg-black/40 p-1.5 rounded-lg border border-slate-800/80 flex items-center justify-between">
+                <span class="text-slate-400 text-[10px]">협력/내방</span>
+                ${isNa ? '<span class="text-slate-500 font-sans text-[10px]">열외 (0명)</span>' : (isReported 
+                  ? `<span class="${gMiss > 0 ? 'text-amber-400 font-bold' : 'text-slate-200'}">${gDone} / ${gTotal}명</span>`
+                  : `<span class="text-slate-500 font-sans text-[10px]">미제출</span>`)}
+              </div>
+            </div>
+
+            <!-- Remark Note -->
+            ${isReported && rec.note && rec.note !== '-' && rec.note !== '특이사항 없음' ? `
+              <div class="text-[11px] p-2 rounded-lg bg-black/50 border border-slate-800 text-slate-300">
+                <span class="text-amber-400 font-semibold mr-1">특이사항:</span>${rec.note}
+              </div>
+            ` : ''}
+          `;
+
+          body.appendChild(card);
         });
 
-        // 검색 중이거나 사용자가 펼친 경우 열기 (기본은 접힘)
-        const isExpanded = query.length > 0 || !!groupExpandedState[groupName];
-
-        // 그룹 컨테이너 카드
-        const groupCard = document.createElement('div');
-        groupCard.className = "bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-sm transition";
-
-        // 그룹 헤더 (클릭 시 아코디언 토글)
-        const header = document.createElement('div');
-        header.className = "px-3.5 py-3 bg-[#111a2e] hover:bg-[#16213a] flex items-center justify-between cursor-pointer border-b border-slate-800/80 select-none transition";
-        header.onclick = () => toggleGroup(groupName);
-
-        // 그룹 헤더 태그
-        let groupBadge = '';
-        if (groupMissingPersons > 0) {
-          groupBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/40">미확인 ${groupMissingPersons}명</span>`;
-        } else if (groupTotalReported === depts.length) {
-          groupBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">전체 완료 (${groupTotalReported}/${depts.length})</span>`;
-        } else {
-          groupBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">보고 ${groupTotalReported}/${depts.length}</span>`;
-        }
-
-        header.innerHTML = `
-          <div class="flex items-center gap-2 min-w-0">
-            <span class="w-5 h-5 rounded-lg flex items-center justify-center ${isExpanded ? 'bg-sky-500/20 text-sky-400' : 'bg-slate-800 text-slate-400'} text-xs font-bold font-mono">
-              ${isExpanded ? '−' : '+'}
-            </span>
-            <span class="font-extrabold text-xs text-white truncate">${groupName}</span>
-            <span class="text-[10px] text-slate-400 font-normal">(${depts.length}개 팀)</span>
-          </div>
-          <div class="flex items-center gap-2 flex-shrink-0">
-            ${groupBadge}
-            <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" class="w-3.5 h-3.5 text-slate-400"></i>
-          </div>
-        `;
-
-        groupCard.appendChild(header);
-
-        // 아코디언 바디 (부서 목록)
-        if (isExpanded) {
-          const body = document.createElement('div');
-          body.className = "p-2.5 space-y-2 bg-[#0b1220]/60";
-
-          filteredDepts.forEach(deptMeta => {
-            const rec = departmentRecords[deptMeta.name];
-            const isReported = !!rec;
-            const eTotal = isReported ? rec.eTotal : 0;
-            const eDone = isReported ? rec.eDone : 0;
-            const gTotal = isReported ? rec.gTotal : 0;
-            const gDone = isReported ? rec.gDone : 0;
-            const eMiss = isReported ? Math.max(0, eTotal - eDone) : 0;
-            const gMiss = isReported ? Math.max(0, gTotal - gDone) : 0;
-            const hasMissing = isReported && (eMiss > 0 || gMiss > 0);
-
-            const card = document.createElement('div');
-            let borderClass = "border-slate-800 bg-[#111a2e]";
-            let badgeHtml = '';
-
-            if (!isReported) {
-              borderClass = "border-amber-500/40 bg-amber-950/20";
-              badgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">미보고</span>`;
-            } else if (hasMissing) {
-              borderClass = "border-red-500/50 bg-red-950/25";
-              badgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-600/30 text-red-300 border border-red-500/50 animate-pulse">미확인 ${eMiss + gMiss}명</span>`;
-            } else {
-              badgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-400">완료</span>`;
-            }
-
-            card.className = `p-2.5 rounded-xl border ${borderClass} shadow-sm space-y-2 transition`;
-
-            // 부서명에서 상위태그 텍스트 깔끔히 정리
-            const cleanName = deptMeta.name.replace(/\[.*?\]\s*/, '');
-
-            card.innerHTML = `
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <div class="flex items-center gap-1.5">
-                    <span class="font-bold text-xs text-slate-100 truncate">${cleanName}</span>
-                  </div>
-                  <div class="text-[10px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-2">
-                    ${isReported ? `<span>보고자: <strong class="text-slate-200">${rec.submitter}</strong></span>` : '<span class="text-amber-400/80">아직 제출되지 않음</span>'}
-                    ${isReported ? `<span>• 접수: ${rec.updatedAt}</span>` : ''}
-                  </div>
-                </div>
-                <div class="flex-shrink-0">
-                  ${badgeHtml}
-                </div>
-              </div>
-
-              <!-- Numbers Grid -->
-              <div class="grid grid-cols-2 gap-1.5 pt-1 text-[11px] font-mono">
-                <div class="bg-black/40 p-1.5 rounded-lg border border-slate-800/80 flex items-center justify-between">
-                  <span class="text-slate-400 text-[10px]">임직원</span>
-                  ${isReported 
-                    ? `<span class="${eMiss > 0 ? 'text-red-400 font-bold' : 'text-slate-200'}">${eDone} / ${eTotal}명</span>`
-                    : `<span class="text-slate-500 font-sans text-[10px]">미제출</span>`}
-                </div>
-                <div class="bg-black/40 p-1.5 rounded-lg border border-slate-800/80 flex items-center justify-between">
-                  <span class="text-slate-400 text-[10px]">협력/내방</span>
-                  ${isReported 
-                    ? `<span class="${gMiss > 0 ? 'text-amber-400 font-bold' : 'text-slate-200'}">${gDone} / ${gTotal}명</span>`
-                    : `<span class="text-slate-500 font-sans text-[10px]">미제출</span>`}
-                </div>
-              </div>
-
-              <!-- Remark Note -->
-              ${isReported && rec.note && rec.note !== '-' && rec.note !== '특이사항 없음' ? `
-                <div class="text-[11px] p-2 rounded-lg bg-black/50 border border-slate-800 text-slate-300">
-                  <span class="text-amber-400 font-semibold mr-1">특이사항:</span>${rec.note}
-                </div>
-              ` : ''}
-            `;
-
-            body.appendChild(card);
-          });
-
-          groupCard.appendChild(body);
-        }
-
-        container.appendChild(groupCard);
-      });
-
-      if (totalVisibleGroups === 0) {
-        container.innerHTML = `
-          <div class="text-center py-12 text-slate-500 text-xs bg-slate-900/50 rounded-2xl border border-slate-800">
-            <i data-lucide="check-circle" class="w-8 h-8 mx-auto mb-2 opacity-30"></i>
-            해당 조건의 부서 또는 검색 결과가 없습니다.
-          </div>
-        `;
+        groupCard.appendChild(body);
       }
+
+      container.appendChild(groupCard);
+    });
+
+    if (totalVisibleGroups === 0) {
+      container.innerHTML = `
+        <div class="text-center py-12 text-slate-500 text-xs bg-slate-900/50 rounded-2xl border border-slate-800">
+          <i data-lucide="check-circle" class="w-8 h-8 mx-auto mb-2 opacity-30"></i>
+          해당 조건의 부서 또는 검색 결과가 없습니다.
+        </div>
+      `;
+    }
+  }
+
+  // N/A 모달 열기
+  function openNaModal(deptName) {
+    pendingNaDeptName = deptName;
+    document.getElementById('naModalDeptTitle').innerText = `[${deptName.replace(/\[.*?\]\s*/, '')}] N/A(열외) 처리`;
+    document.getElementById('naCustomReasonInput').classList.add('hidden');
+    document.getElementById('naCustomReasonInput').value = '';
+    const defaultRadio = document.querySelector('input[name="naReason"][value="당일 전원 재택/외근/휴가"]');
+    if (defaultRadio) defaultRadio.checked = true;
+    document.getElementById('naModal').classList.remove('hidden');
+  }
+
+  // N/A 처리 확정
+  function confirmNaDepartment() {
+    if (!pendingNaDeptName) return;
+
+    const selectedRadio = document.querySelector('input[name="naReason"]:checked');
+    let reason = selectedRadio ? selectedRadio.value : '관리자 열외 처리';
+    if (reason === 'custom') {
+      const customVal = document.getElementById('naCustomReasonInput').value.trim();
+      reason = customVal || '기타 관리자 확인 사유';
     }
 
-    // 개별 그룹 토글
-    function toggleGroup(groupName) {
-      groupExpandedState[groupName] = !groupExpandedState[groupName];
-      renderDeptGroups();
-      lucide.createIcons();
+    const nowTime = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    naDepartments[pendingNaDeptName] = {
+      reason: reason,
+      time: nowTime
+    };
+
+    localStorage.setItem('eoc_na_depts', JSON.stringify(naDepartments));
+    closeModal('naModal');
+    renderAll();
+    showToast(`'${pendingNaDeptName.replace(/\[.*?\]\s*/, '')}' N/A 처리 완료`);
+  }
+
+  // N/A 해제
+  function cancelNaDepartment(deptName) {
+    if (naDepartments[deptName]) {
+      delete naDepartments[deptName];
+      localStorage.setItem('eoc_na_depts', JSON.stringify(naDepartments));
+      renderAll();
+      showToast(`'${deptName.replace(/\[.*?\]\s*/, '')}' N/A 처리가 해제되었습니다.`);
     }
+  }
 
-    // 전체 펼침 / 전체 축소
-    function toggleAllGroups(expand) {
-      const groups = [...new Set(STANDARD_DEPARTMENTS.map(d => d.group))];
-      groups.forEach(g => {
-        groupExpandedState[g] = expand;
-      });
-      renderDeptGroups();
-      lucide.createIcons();
-    }
+  // 개별 그룹 토글
+  function toggleGroup(groupName) {
+    groupExpandedState[groupName] = !groupExpandedState[groupName];
+    renderDeptGroups();
+    lucide.createIcons();
+  }
 
-    // 필터 전환 함수
-    function setFilter(type) {
-      currentFilter = type;
-      const tabs = [
-        { id: 'unreported', activeClass: 'bg-amber-600/30 text-amber-300 border border-amber-500/40 font-bold' },
-        { id: 'missing', activeClass: 'bg-red-600/30 text-red-300 border border-red-500/40 font-bold' },
-        { id: 'complete', activeClass: 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 font-bold' },
-        { id: 'all', activeClass: 'bg-sky-600/30 text-sky-300 border border-sky-500/40 font-bold' }
-      ];
+  // 전체 펼침 / 전체 축소
+  function toggleAllGroups(expand) {
+    const groups = [...new Set(STANDARD_DEPARTMENTS.map(d => d.group))];
+    groups.forEach(g => {
+      groupExpandedState[g] = expand;
+    });
+    renderDeptGroups();
+    lucide.createIcons();
+  }
 
-      tabs.forEach(t => {
-        const btn = document.getElementById(`filterTab${t.id.charAt(0).toUpperCase() + t.id.slice(1)}`);
+  // 필터 전환 함수
+  function setFilter(type) {
+    currentFilter = type;
+    const tabs = [
+      { id: 'unreported', activeClass: 'bg-amber-600/30 text-amber-300 border border-amber-500/40 font-bold' },
+      { id: 'missing', activeClass: 'bg-red-600/30 text-red-300 border border-red-500/40 font-bold' },
+      { id: 'complete', activeClass: 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 font-bold' },
+      { id: 'na', activeClass: 'bg-slate-700/60 text-slate-200 border border-slate-600 font-bold' },
+      { id: 'all', activeClass: 'bg-sky-600/30 text-sky-300 border border-sky-500/40 font-bold' }
+    ];
+
+    tabs.forEach(t => {
+      const btn = document.getElementById(`filterTab${t.id.charAt(0).toUpperCase() + t.id.slice(1)}`);
+      if (btn) {
         if (t.id === type) {
           btn.className = `py-1.5 rounded-lg transition ${t.activeClass}`;
         } else {
           btn.className = `py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition`;
         }
-      });
+      }
+    });
 
+    renderDeptGroups();
+    lucide.createIcons();
+  }
+
+  // 미보고 부서 독촉 카톡 메시지 원클릭 복사
+  function copyNudgeMessage() {
+    const metrics = calculateMetrics();
+    if (metrics.unreportedDepts.length === 0) {
+      showToast("모든 부서가 제출 완료되었습니다.");
+      return;
+    }
+
+    const deptNames = metrics.unreportedDepts.map(d => d.name.replace(/\[.*?\]\s*/, '')).join(', ');
+    const msg = `🚨 [비상대피 점호 미제출 부서 안내]\n현재 총 ${metrics.unreportedDepts.length}개 부서가 대피 인원을 아직 보고하지 않았습니다.\n\n• 미보고 부서: ${deptNames}\n\n각 부서 안전담당자께서는 집결 인원을 신속히 파악하여 구글 폼 링크로 즉시 제출해 주시기 바랍니다.`;
+
+    copyToClipboard(msg);
+    showToast("독촉 카톡 문구가 복사되었습니다!");
+  }
+
+  // 119 인계 브리핑 문구 생성 및 복사
+  function openBriefingModal() {
+    const metrics = calculateMetrics();
+    const elapsedMins = Math.floor((Date.now() - drillStartTime) / 60000);
+
+    let text = `[119 소방대 현장 인계 인원점호 브리핑]\n`;
+    text += `• 보고 시각: ${new Date().toLocaleTimeString('ko-KR')} (발령 경과 T+${elapsedMins}분)\n`;
+    text += `• 총 재실 인원: ${metrics.totalPeople}명 (임직원 ${metrics.empTotal}명 / 협력사·내방객 ${metrics.guestTotal}명)\n`;
+    text += `• 옥외 대피 완료: ${metrics.totalEvacuated}명 (${metrics.overallRate}%)\n`;
+    text += `• 현재 미확인/잔류: 총 ${metrics.totalMissing}명\n`;
+    text += `• 점호 보고 완료율: ${metrics.reportedCount} / ${metrics.activeTotalDepts}개 부서`;
+    if (metrics.naDeptsList.length > 0) {
+      text += ` (열외/N/A ${metrics.naDeptsList.length}곳 제외)`;
+    }
+    text += `\n\n`;
+
+    if (metrics.missingPersonDepts.length > 0) {
+      text += `■ 잔류자 추정 위치 (현장 보고):\n`;
+      metrics.missingPersonDepts.forEach((m, idx) => {
+        text += `  ${idx + 1}. [${m.dept}] ${m.note} (보고: ${m.submitter})\n`;
+      });
+    } else {
+      text += `■ 현재까지 파악된 실내 잔류자 없음 (대피 완료 보고 부서 기준)\n`;
+    }
+
+    if (metrics.unreportedDepts.length > 0) {
+      text += `\n※ 미보고 부서 (${metrics.unreportedDepts.length}곳): ` + metrics.unreportedDepts.map(d => d.name.replace(/\[.*?\]\s*/, '')).join(', ');
+    }
+
+    if (metrics.naDeptsList.length > 0) {
+      text += `\n※ N/A(열외) 확인 부서 (${metrics.naDeptsList.length}곳):\n`;
+      metrics.naDeptsList.forEach(d => {
+        text += `  • ${d.name.replace(/\[.*?\]\s*/, '')}: ${d.naReason}\n`;
+      });
+    }
+
+    document.getElementById('briefingContent').innerText = text;
+    document.getElementById('briefingModal').classList.remove('hidden');
+    lucide.createIcons();
+  }
+
+  function copyBriefingText() {
+    const text = document.getElementById('briefingContent').innerText;
+    copyToClipboard(text);
+    const label = document.getElementById('copyBtnLabel');
+    label.innerText = "복사 완료!";
+    setTimeout(() => { label.innerText = "브리핑 복사"; }, 2000);
+    showToast("119 브리핑 문구가 복사되었습니다.");
+  }
+
+  function copyToClipboard(str) {
+    const ta = document.createElement('textarea');
+    ta.value = str;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+
+  // Google Sheets 실시간 동기화
+  async function fetchFromSheet() {
+    if (!sheetUrl) return;
+
+    try {
+      const res = await fetch(sheetUrl);
+      const text = await res.text();
+      let rows = [];
+      try {
+        rows = JSON.parse(text);
+      } catch(e) {
+        rows = text.split('\n').map(r => r.split(',').map(c => c.replace(/^"|"$/g, '').trim()));
+      }
+
+      if (!rows || rows.length <= 1) return;
+
+      const newRecords = {};
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.length < 5) continue;
+
+        const timestamp = row[0] ? String(row[0]).split(' ')[1] || row[0] : '--:--';
+        const dept = String(row[1]).trim();
+        const submitter = String(row[2] || '담당자').trim();
+        const eTotal = Number(row[3]) || 0;
+        const eDone = Number(row[4]) || 0;
+        const gTotal = Number(row[5]) || 0;
+        const gDone = Number(row[6]) || 0;
+        const note = row[7] ? String(row[7]).trim() : '-';
+
+        if (!dept) continue;
+
+        // 동일 부서 최신 덮어쓰기
+        newRecords[dept] = { dept, submitter, eTotal, eDone, gTotal, gDone, note, updatedAt: timestamp };
+      }
+
+      departmentRecords = newRecords;
+      renderAll();
+    } catch (err) {
+      console.error("Sheet polling failed:", err);
+    }
+  }
+
+  function showToast(msg) {
+    const toast = document.getElementById('toast');
+    document.getElementById('toastMessage').innerText = msg;
+    toast.classList.remove('translate-y-24', 'opacity-0');
+    setTimeout(() => {
+      toast.classList.add('translate-y-24', 'opacity-0');
+    }, 2500);
+  }
+
+  function closeModal(id) {
+    document.getElementById(id).classList.add('hidden');
+  }
+
+  function saveSettings() {
+    sheetUrl = document.getElementById('sheetUrlInput').value.trim();
+    pollInterval = Number(document.getElementById('syncIntervalSelect').value);
+    localStorage.setItem('eoc_sheet_url', sheetUrl);
+    closeModal('settingsModal');
+    showToast("관제 설정이 저장되었습니다.");
+
+    if (sheetUrl) {
+      isDemoMode = false;
+      document.getElementById('demoModeLabel').innerText = "실제 시트 연동";
+      restartSync();
+    }
+  }
+
+  function restartSync() {
+    if (syncTimer) clearInterval(syncTimer);
+    if (!isDemoMode && sheetUrl) {
+      fetchFromSheet();
+      syncTimer = setInterval(fetchFromSheet, pollInterval);
+    }
+  }
+
+  function initTimers() {
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById('currentTime').innerText = now.toLocaleTimeString('ko-KR');
+
+      const elapsedSec = Math.floor((Date.now() - drillStartTime) / 1000);
+      const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
+      const secs = String(elapsedSec % 60).padStart(2, '0');
+      document.getElementById('incidentTimer').innerText = `${mins}:${secs}`;
+    }, 1000);
+  }
+
+  window.onload = function() {
+    initTimers();
+
+    // Radio change listener for custom reason
+    const radios = document.querySelectorAll('input[name="naReason"]');
+    radios.forEach(r => {
+      r.addEventListener('change', (e) => {
+        const customInput = document.getElementById('naCustomReasonInput');
+        if (e.target.value === 'custom') {
+          customInput.classList.remove('hidden');
+          customInput.focus();
+        } else {
+          customInput.classList.add('hidden');
+        }
+      });
+    });
+
+    // Events
+    document.getElementById('openBriefingBtn').addEventListener('click', openBriefingModal);
+    document.getElementById('openSettingsBtn').addEventListener('click', () => {
+      document.getElementById('sheetUrlInput').value = sheetUrl;
+      document.getElementById('settingsModal').classList.remove('hidden');
+    });
+
+    document.getElementById('deptSearchInput').addEventListener('input', (e) => {
+      searchQuery = e.target.value;
       renderDeptGroups();
       lucide.createIcons();
-    }
+    });
 
-    // 미보고 부서 독촉 카톡 메시지 원클릭 복사
-    function copyNudgeMessage() {
-      const metrics = calculateMetrics();
-      if (metrics.unreportedDepts.length === 0) {
-        showToast("모든 부서가 제출 완료되었습니다.");
-        return;
-      }
-
-      const deptNames = metrics.unreportedDepts.map(d => d.name.replace(/\[.*?\]\s*/, '')).join(', ');
-      const msg = `🚨 [비상대피 점호 미제출 부서 안내]\n현재 총 ${metrics.unreportedDepts.length}개 부서가 대피 인원을 아직 보고하지 않았습니다.\n\n• 미보고 부서: ${deptNames}\n\n각 부서 안전담당자께서는 집결 인원을 신속히 파악하여 구글 폼 링크로 즉시 제출해 주시기 바랍니다.`;
-
-      copyToClipboard(msg);
-      showToast("독촉 카톡 문구가 복사되었습니다!");
-    }
-
-    // 119 인계 브리핑 문구 생성 및 복사
-    function openBriefingModal() {
-      const metrics = calculateMetrics();
-      const elapsedMins = Math.floor((Date.now() - drillStartTime) / 60000);
-
-      let text = `[119 소방대 현장 인계 인원점호 브리핑]\n`;
-      text += `• 보고 시각: ${new Date().toLocaleTimeString('ko-KR')} (발령 경과 T+${elapsedMins}분)\n`;
-      text += `• 총 재실 인원: ${metrics.totalPeople}명 (임직원 ${metrics.empTotal}명 / 협력사·내방객 ${metrics.guestTotal}명)\n`;
-      text += `• 옥외 대피 완료: ${metrics.totalEvacuated}명 (${metrics.overallRate}%)\n`;
-      text += `• 현재 미확인/잔류: 총 ${metrics.totalMissing}명\n`;
-      text += `• 점호 보고 완료율: ${metrics.reportedCount} / ${metrics.totalDepts}개 부서\n\n`;
-
-      if (metrics.missingPersonDepts.length > 0) {
-        text += `■ 잔류자 추정 위치 (현장 보고):\n`;
-        metrics.missingPersonDepts.forEach((m, idx) => {
-          text += `  ${idx + 1}. [${m.dept}] ${m.note} (보고: ${m.submitter})\n`;
-        });
-      } else {
-        text += `■ 현재까지 파악된 실내 잔류자 없음 (대피 완료 보고 부서 기준)\n`;
-      }
-
-      if (metrics.unreportedDepts.length > 0) {
-        text += `\n※ 미보고 부서 (${metrics.unreportedDepts.length}곳): ` + metrics.unreportedDepts.map(d => d.name).join(', ');
-      }
-
-      document.getElementById('briefingContent').innerText = text;
-      document.getElementById('briefingModal').classList.remove('hidden');
-      lucide.createIcons();
-    }
-
-    function copyBriefingText() {
-      const text = document.getElementById('briefingContent').innerText;
-      copyToClipboard(text);
-      const label = document.getElementById('copyBtnLabel');
-      label.innerText = "복사 완료!";
-      setTimeout(() => { label.innerText = "브리핑 복사"; }, 2000);
-      showToast("119 브리핑 문구가 복사되었습니다.");
-    }
-
-    function copyToClipboard(str) {
-      const ta = document.createElement('textarea');
-      ta.value = str;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-    }
-
-    // Google Sheets 실시간 동기화
-    async function fetchFromSheet() {
-      if (!sheetUrl) return;
-
-      try {
-        const res = await fetch(sheetUrl);
-        const text = await res.text();
-        let rows = [];
-        try {
-          rows = JSON.parse(text);
-        } catch(e) {
-          rows = text.split('\n').map(r => r.split(',').map(c => c.replace(/^"|"$/g, '').trim()));
-        }
-
-        if (!rows || rows.length <= 1) return;
-
-        const newRecords = {};
-        for (let i = 1; i < rows.length; i++) {
-          const row = rows[i];
-          if (!row || row.length < 5) continue;
-
-          const timestamp = row[0] ? String(row[0]).split(' ')[1] || row[0] : '--:--';
-          const dept = String(row[1]).trim();
-          const submitter = String(row[2] || '담당자').trim();
-          const eTotal = Number(row[3]) || 0;
-          const eDone = Number(row[4]) || 0;
-          const gTotal = Number(row[5]) || 0;
-          const gDone = Number(row[6]) || 0;
-          const note = row[7] ? String(row[7]).trim() : '-';
-
-          if (!dept) continue;
-
-          // 동일 부서 최신 덮어쓰기
-          newRecords[dept] = { dept, submitter, eTotal, eDone, gTotal, gDone, note, updatedAt: timestamp };
-        }
-
-        departmentRecords = newRecords;
-        renderAll();
-      } catch (err) {
-        console.error("Sheet polling failed:", err);
-      }
-    }
-
-    function showToast(msg) {
-      const toast = document.getElementById('toast');
-      document.getElementById('toastMessage').innerText = msg;
-      toast.classList.remove('translate-y-24', 'opacity-0');
-      setTimeout(() => {
-        toast.classList.add('translate-y-24', 'opacity-0');
-      }, 2500);
-    }
-
-    function closeModal(id) {
-      document.getElementById(id).classList.add('hidden');
-    }
-
-    function saveSettings() {
-      sheetUrl = document.getElementById('sheetUrlInput').value.trim();
-      pollInterval = Number(document.getElementById('syncIntervalSelect').value);
-      localStorage.setItem('eoc_sheet_url', sheetUrl);
-      closeModal('settingsModal');
-      showToast("관제 설정이 저장되었습니다.");
-
-      if (sheetUrl) {
-        isDemoMode = false;
-        document.getElementById('demoModeLabel').innerText = "실제 시트 연동";
-        restartSync();
-      }
-    }
-
-    function restartSync() {
-      if (syncTimer) clearInterval(syncTimer);
-      if (!isDemoMode && sheetUrl) {
-        fetchFromSheet();
-        syncTimer = setInterval(fetchFromSheet, pollInterval);
-      }
-    }
-
-    function initTimers() {
-      setInterval(() => {
-        const now = new Date();
-        document.getElementById('currentTime').innerText = now.toLocaleTimeString('ko-KR');
-
-        const elapsedSec = Math.floor((Date.now() - drillStartTime) / 1000);
-        const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
-        const secs = String(elapsedSec % 60).padStart(2, '0');
-        document.getElementById('incidentTimer').innerText = `${mins}:${secs}`;
-      }, 1000);
-    }
-
-    window.onload = function() {
-      initTimers();
-
-      // Events
-      document.getElementById('openBriefingBtn').addEventListener('click', openBriefingModal);
-      document.getElementById('openSettingsBtn').addEventListener('click', () => {
-        document.getElementById('sheetUrlInput').value = sheetUrl;
-        document.getElementById('settingsModal').classList.remove('hidden');
-      });
-
-      document.getElementById('deptSearchInput').addEventListener('input', (e) => {
-        searchQuery = e.target.value;
-        renderDeptGroups();
-        lucide.createIcons();
-      });
-
-      document.getElementById('toggleDemoBtn').addEventListener('click', () => {
-        isDemoMode = !isDemoMode;
-        if (isDemoMode) {
-          document.getElementById('demoModeLabel').innerText = "모의 데이터";
-          loadMockData();
-        } else {
-          document.getElementById('demoModeLabel').innerText = "실제 시트 대기";
-          departmentRecords = {};
-          renderAll();
-          if (sheetUrl) restartSync();
-          showToast("실제 시트 수신 모드로 전환되었습니다.");
-        }
-      });
-
-      if (sheetUrl) {
-        isDemoMode = false;
-        document.getElementById('demoModeLabel').innerText = "실제 시트 연동";
-        restartSync();
-      } else {
+    document.getElementById('toggleDemoBtn').addEventListener('click', () => {
+      isDemoMode = !isDemoMode;
+      if (isDemoMode) {
+        document.getElementById('demoModeLabel').innerText = "모의 데이터";
         loadMockData();
+      } else {
+        document.getElementById('demoModeLabel').innerText = "실제 시트 대기";
+        departmentRecords = {};
+        renderAll();
+        if (sheetUrl) restartSync();
+        showToast("실제 시트 수신 모드로 전환되었습니다.");
       }
+    });
 
-      lucide.createIcons();
-    };
+    if (sheetUrl) {
+      isDemoMode = false;
+      document.getElementById('demoModeLabel').innerText = "실제 시트 연동";
+      restartSync();
+    } else {
+      loadMockData();
+    }
+
+    lucide.createIcons();
+  };
   </script>
 </body>
 </html>
