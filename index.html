@@ -345,6 +345,10 @@
   </div>
 
   <script>
+  // ★ [필수 설정] 여기에 발급받으신 Apps Script 웹 앱 URL(exec)을 입력해두면,
+  // 어떤 모바일 기기에서든 대시보드를 열었을 때 자동으로 실제 시트가 연동됩니다!
+  const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxSOyEmlT9UBfacs7QR0mvMoTKjNuXiXUMz_lyrCqTtxL_m2lX-7AB1zyG0CXrs5XF4cQ/exec";
+
   // 부서 목록 정의: 실제 조직 체계 반영 (총 19개 부서/조직)
   const STANDARD_DEPARTMENTS = [
     // [SYSTEM본부] (6개)
@@ -382,11 +386,20 @@
   // Global State
   let currentFilter = 'all'; // 그룹 확인이 쉽도록 초기값 'all' 또는 'unreported'
   let searchQuery = '';
-  let isDemoMode = true;
+  
+  // URL 파라미터(?url=...) 처리
+  const urlParams = new URLSearchParams(window.location.search);
+  const paramUrl = urlParams.get('url');
+  if (paramUrl) {
+    localStorage.setItem('eoc_sheet_url', paramUrl);
+  }
+
+  const savedSheetUrl = localStorage.getItem('eoc_sheet_url');
+  let sheetUrl = paramUrl || (savedSheetUrl && savedSheetUrl.trim() !== "" ? savedSheetUrl : DEFAULT_SCRIPT_URL);
+  let isDemoMode = !sheetUrl;
   let pollInterval = 5000;
   let syncTimer = null;
   let drillStartTime = Date.now();
-  let sheetUrl = localStorage.getItem('eoc_sheet_url') || '';
 
   // N/A 처리된 부서 관리 (Key: deptName, Value: { reason: string, time: string })
   let naDepartments = JSON.parse(localStorage.getItem('eoc_na_depts') || '{}');
@@ -1061,7 +1074,8 @@
   }
 
   function saveSettings() {
-    sheetUrl = document.getElementById('sheetUrlInput').value.trim();
+    const inputVal = document.getElementById('sheetUrlInput').value.trim();
+    sheetUrl = inputVal || DEFAULT_SCRIPT_URL;
     pollInterval = Number(document.getElementById('syncIntervalSelect').value);
     localStorage.setItem('eoc_sheet_url', sheetUrl);
     closeModal('settingsModal');
@@ -1071,6 +1085,10 @@
       isDemoMode = false;
       document.getElementById('demoModeLabel').innerText = "실제 시트 연동";
       restartSync();
+    } else {
+      isDemoMode = true;
+      document.getElementById('demoModeLabel').innerText = "모의 데이터";
+      loadMockData();
     }
   }
 
