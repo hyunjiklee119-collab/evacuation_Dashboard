@@ -395,8 +395,8 @@
   // 그룹 아코디언 상태 관리 (기본값: false - 축소 상태)
   let groupExpandedState = {};
 
-  // Data Map: Key = Department Name (최신 제출 덮어쓰기)
-  let departmentRecords = {};
+  // Data Map: Key = Department Name (새로고침 시에도 유지되도록 localStorage 캐시 복원)
+  let departmentRecords = JSON.parse(localStorage.getItem('eoc_dept_records') || '{}');
 
   // 모의 테스트용 데이터 (실제 부서명 기준 샘플)
   const MOCK_SUBMISSIONS = [
@@ -425,6 +425,7 @@
         updatedAt: sub.time
       };
     });
+    localStorage.setItem('eoc_dept_records', JSON.stringify(departmentRecords));
     renderAll();
     showToast("모의 점호 데이터가 로드되었습니다.");
   }
@@ -998,16 +999,25 @@
       const res = await fetch(sheetUrl);
       const text = await res.text();
       let rows = [];
+      let isJson = false;
+
       try {
         rows = JSON.parse(text);
+        isJson = true;
       } catch(e) {
         rows = text.split('\n').map(r => r.split(',').map(c => c.replace(/^"|"$/g, '').trim()));
+        isJson = false;
       }
 
-      if (!rows || rows.length <= 1) return;
+      // 데이터가 아예 없거나 빈 배열인 경우 기존 데이터 유지
+      if (!rows || rows.length === 0) return;
 
       const newRecords = {};
-      for (let i = 1; i < rows.length; i++) {
+      // Apps Script JSON인 경우 1행(헤더)이 이미 제외되어 있으므로 0번째부터 순회,
+      // 순수 CSV인 경우 0번째가 헤더이므로 1번째부터 순회
+      const startIndex = isJson ? 0 : 1;
+
+      for (let i = startIndex; i < rows.length; i++) {
         const row = rows[i];
         if (!row || row.length < 5) continue;
 
@@ -1026,8 +1036,12 @@
         newRecords[dept] = { dept, submitter, eTotal, eDone, gTotal, gDone, note, updatedAt: timestamp };
       }
 
-      departmentRecords = newRecords;
-      renderAll();
+      // 파싱된 레코드가 있을 때만 덮어쓰고 localStorage에 저장 (네트워크 일시 오류 시 기존 데이터 보존)
+      if (Object.keys(newRecords).length > 0) {
+        departmentRecords = newRecords;
+        localStorage.setItem('eoc_dept_records', JSON.stringify(departmentRecords));
+        renderAll();
+      }
     } catch (err) {
       console.error("Sheet polling failed:", err);
     }
@@ -1116,8 +1130,8 @@
         document.getElementById('demoModeLabel').innerText = "모의 데이터";
         loadMockData();
       } else {
-        document.getElementById('demoModeLabel').innerText = "실제 시트 대기";
-        departmentRecords = {};
+        document.getElementById('demoModeLabel').innerText = "실제 시트 연동";
+        // 기존 캐시가 있다면 유지하면서 실제 시트 즉시 조회
         renderAll();
         if (sheetUrl) restartSync();
         showToast("실제 시트 수신 모드로 전환되었습니다.");
@@ -1127,6 +1141,7 @@
     if (sheetUrl) {
       isDemoMode = false;
       document.getElementById('demoModeLabel').innerText = "실제 시트 연동";
+      renderAll(); // 캐시된 데이터 먼저 즉시 렌더링
       restartSync();
     } else {
       loadMockData();
