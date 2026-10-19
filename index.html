@@ -379,8 +379,8 @@
         <label class="flex items-start gap-2.5 p-2.5 rounded-xl bg-slate-800/70 border border-slate-700 cursor-pointer hover:bg-slate-800 transition">
           <input type="radio" name="resetMode" value="newSession" checked class="mt-0.5 accent-red-500">
           <div>
-            <div class="font-bold text-slate-100">새 훈련 세션 시작 (권장)</div>
-            <div class="text-[11px] text-slate-400 mt-0.5">지금 이 시각(기준) 이후로 제출되는 응답만 화면에 반영하고, 타이머(T+00:00) 및 N/A 설정을 리셋합니다. 과거 시트 기록은 보존됩니다.</div>
+            <div class="font-bold text-slate-100">새 훈련 세션 시작 (구글 시트에 초기화 기록)</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">구글 시트에 <strong>[세션 초기화 마커]</strong> 행을 자동 기록하여 모든 관제 화면과 동기화하고, 지금 시점 이전의 과거 기록은 대시보드 집계에서 자동 제외합니다.</div>
           </div>
         </label>
 
@@ -388,15 +388,16 @@
           <input type="radio" name="resetMode" value="clearCache" class="mt-0.5 accent-red-500">
           <div>
             <div class="font-bold text-slate-100">로컬 화면 캐시만 비우기</div>
-            <div class="text-[11px] text-slate-400 mt-0.5">화면의 로컬 캐시를 비우고 구글 시트 원본 데이터를 처음부터 다시 조회합니다.</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">구글 시트 기록을 건드리지 않고 브라우저 로컬 캐시만 비워 원본 데이터를 처음부터 다시 조회합니다.</div>
           </div>
         </label>
       </div>
 
       <div class="flex justify-end gap-2 pt-2">
-        <button onclick="executeReset()" class="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs transition active:scale-95 flex items-center gap-1.5">
-          <i data-lucide="check" class="w-3.5 h-3.5"></i>
-          <span>초기화 실행</span>
+        <button id="executeResetBtn" onclick="executeReset()" class="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs transition active:scale-95 flex items-center gap-1.5">
+          <span id="resetSpinner" class="hidden w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+          <i data-lucide="check" id="resetCheckIcon" class="w-3.5 h-3.5"></i>
+          <span id="resetBtnLabel">초기화 실행</span>
         </button>
         <button onclick="closeModal('resetModal')" class="px-3.5 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-medium">
           취소
@@ -657,19 +658,45 @@ function doPost(e) {
     return `${yyyy}-${mm}-${dd}`;
   }
 
+  // Cross-browser safe timestamp parser (supports YYYY-MM-DD, YYYY. M. D., ISO, etc.)
+  function parseTimestampToMs(timestampVal) {
+    if (!timestampVal) return 0;
+    if (timestampVal instanceof Date) return timestampVal.getTime();
+    
+    const str = String(timestampVal).trim();
+    // Case 1: Standard YYYY-MM-DD HH:mm:ss
+    const isoLike = str.replace(/\./g, '-').replace(/\s+/g, ' ');
+    const directParsed = new Date(isoLike).getTime();
+    if (!isNaN(directParsed)) return directParsed;
+
+    // Case 2: Regex extraction
+    const match = str.match(/(\d{4})[-/.]\s*(\d{1,2})[-/.]\s*(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+    if (match) {
+      const y = parseInt(match[1], 10);
+      const m = parseInt(match[2], 10) - 1;
+      const d = parseInt(match[3], 10);
+      const hh = match[4] ? parseInt(match[4], 10) : 0;
+      const mm = match[5] ? parseInt(match[5], 10) : 0;
+      const ss = match[6] ? parseInt(match[6], 10) : 0;
+      return new Date(y, m, d, hh, mm, ss).getTime();
+    }
+    return 0;
+  }
+
   function extractDateString(timestampVal) {
     if (!timestampVal) return '';
     const str = String(timestampVal).trim();
-    const dashMatch = str.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    const dashMatch = str.match(/(\d{4})[-/.]\s*(\d{1,2})[-/.]\s*(\d{1,2})/);
     if (dashMatch) {
       return `${dashMatch[1]}-${dashMatch[2].padStart(2, '0')}-${dashMatch[3].padStart(2, '0')}`;
     }
-    const parsed = new Date(str);
-    if (!isNaN(parsed.getTime())) {
-      const y = parsed.getFullYear();
-      const m = String(parsed.getMonth() + 1).padStart(2, '0');
-      const d = String(parsed.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
+    const ms = parseTimestampToMs(timestampVal);
+    if (ms > 0) {
+      const d = new Date(ms);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${dd}`;
     }
     return '';
   }
@@ -695,21 +722,41 @@ function doPost(e) {
     const today = getTodayYMD();
     const newRecords = {};
 
+    let latestSheetResetTime = 0;
+    rows.forEach(row => {
+      if (!row || row.length < 2) return;
+      const rawTimestamp = row[0];
+      const deptName = String(row[1] || '').trim();
+      const note = String(row[7] || '').trim();
+
+      if (deptName.includes('[시스템]') || note.includes('세션 초기화')) {
+        const resetMs = parseTimestampToMs(rawTimestamp);
+        if (resetMs > latestSheetResetTime) {
+          latestSheetResetTime = resetMs;
+        }
+      }
+    });
+
+    if (latestSheetResetTime > sessionStartTime) {
+      sessionStartTime = latestSheetResetTime;
+      drillStartTime = latestSheetResetTime;
+      localStorage.setItem('eoc_session_start_time', sessionStartTime);
+      localStorage.setItem('eoc_drill_start_time', drillStartTime);
+    }
+
     rows.forEach((row) => {
       if (!row || row.length < 5) return;
       const rawTimestamp = row[0];
       const dept = String(row[1] || '').trim();
-      if (!dept) return;
+      if (!dept || dept.startsWith('[시스템]')) return;
 
       const dateStr = extractDateString(rawTimestamp);
-      const rowTimestampMs = new Date(rawTimestamp).getTime();
+      const rowTimestampMs = parseTimestampToMs(rawTimestamp);
 
-      // 세션 시작 기준 필터 (새 훈련 세션을 시작한 경우 해당 시각 이전 데이터는 제외)
-      if (sessionStartTime > 0 && !isNaN(rowTimestampMs) && rowTimestampMs < sessionStartTime) {
+      if (sessionStartTime > 0 && rowTimestampMs > 0 && rowTimestampMs < sessionStartTime) {
         return;
       }
 
-      // 기준 일자 필터링
       if (selectedDateFilter === 'today') {
         if (dateStr && dateStr !== today) return;
       } else if (selectedDateFilter !== 'all') {
@@ -719,8 +766,8 @@ function doPost(e) {
       const submitter = String(row[2] || '담당자').trim();
       const eTotal = Number(row[3]) || 0;
       const eDone = Number(row[4]) || 0;
-      const gTotal = Number(row[5]) || 0;
-      const gDone = Number(row[6]) || 0;
+      const guestTotal = Number(row[5]) || 0;
+      const guestDone = Number(row[6]) || 0;
       const note = row[7] ? String(row[7]).trim() : '-';
 
       const timeOnly = String(rawTimestamp).includes(' ') ? String(rawTimestamp).split(' ')[1] : String(rawTimestamp);
@@ -730,15 +777,14 @@ function doPost(e) {
         submitter,
         eTotal,
         eDone,
-        gTotal,
-        gDone,
+        gTotal: guestTotal,
+        gDone: guestDone,
         note,
         updatedAt: timeOnly || '--:--',
         rawDate: dateStr || today
       };
 
-      // 시트 행에 N/A 표기가 있는 경우 naDepartments에도 자동 동기화
-      if (submitter.includes('N/A') || note.includes('[N/A') || (eTotal === 0 && eDone === 0 && gTotal === 0 && gDone === 0 && note.includes('열외'))) {
+      if (submitter.includes('N/A') || note.includes('[N/A') || (eTotal === 0 && eDone === 0 && guestTotal === 0 && guestDone === 0 && note.includes('열외'))) {
         if (!naDepartments[dept]) {
           naDepartments[dept] = {
             reason: note.replace('[N/A 열외]', '').trim() || '구글 시트 N/A 반영',
@@ -755,6 +801,7 @@ function doPost(e) {
 
   function updateDateFilterOptions() {
     const select = document.getElementById('targetDateSelect');
+    if (!select) return;
     const existingDates = new Set();
     const today = getTodayYMD();
 
@@ -779,12 +826,14 @@ function doPost(e) {
     select.innerHTML = html;
 
     const label = document.getElementById('activeDateLabel');
-    if (selectedDateFilter === 'today') {
-      label.innerText = `오늘 (${today}) 훈련`;
-    } else if (selectedDateFilter === 'all') {
-      label.innerText = `전체 누적 기록`;
-    } else {
-      label.innerText = `${selectedDateFilter} 훈련 기록`;
+    if (label) {
+      if (selectedDateFilter === 'today') {
+        label.innerText = `오늘 (${today}) 훈련`;
+      } else if (selectedDateFilter === 'all') {
+        label.innerText = `전체 누적 기록`;
+      } else {
+        label.innerText = `${selectedDateFilter} 훈련 기록`;
+      }
     }
   }
 
@@ -904,12 +953,15 @@ function doPost(e) {
     document.getElementById('countPillAll').innerText = metrics.totalDepts;
 
     renderDeptGroups();
-    lucide.createIcons();
+    if (window.lucide && lucide.createIcons) {
+      lucide.createIcons();
+    }
   }
 
   function renderUnreportedSection(unreportedList) {
     const badgeCount = document.getElementById('unreportedBadgeCount');
     const card = document.getElementById('unreportedCard');
+    if (!badgeCount || !card) return;
 
     badgeCount.innerText = unreportedList.length;
 
@@ -956,11 +1008,11 @@ function doPost(e) {
       chip.innerHTML = `
         <span class="truncate max-w-[120px]">${cleanName}</span>
         <div class="flex items-center gap-1 ml-1">
-          <button onclick="openManualEntryModal('${dept.name}')" title="관리자 수기 점호 입력" class="text-[10px] px-1.5 py-0.5 rounded bg-sky-600/40 hover:bg-sky-600/70 text-sky-200 border border-sky-400/40 flex items-center gap-0.5">
+          <button onclick="openManualEntryModal('${dept.name.replace(/'/g, "\\'")}')" title="관리자 수기 점호 입력" class="text-[10px] px-1.5 py-0.5 rounded bg-sky-600/40 hover:bg-sky-600/70 text-sky-200 border border-sky-400/40 flex items-center gap-0.5">
             <i data-lucide="edit-2" class="w-2.5 h-2.5"></i>
             <span>수기입력</span>
           </button>
-          <button onclick="openNaModal('${dept.name}')" title="열외 및 시트 0명 보고 처리" class="text-[10px] px-1.5 py-0.5 rounded bg-amber-600/40 hover:bg-amber-600/70 text-amber-200 border border-amber-400/40">
+          <button onclick="openNaModal('${dept.name.replace(/'/g, "\\'")}')" title="열외 및 시트 0명 보고 처리" class="text-[10px] px-1.5 py-0.5 rounded bg-amber-600/40 hover:bg-amber-600/70 text-amber-200 border border-amber-400/40">
             N/A
           </button>
         </div>
@@ -971,6 +1023,7 @@ function doPost(e) {
 
   function renderDeptGroups() {
     const container = document.getElementById('deptGroupContainer');
+    if (!container) return;
     container.innerHTML = '';
 
     const query = searchQuery.trim().toLowerCase();
@@ -1079,6 +1132,7 @@ function doPost(e) {
           const gMiss = isReported ? Math.max(0, gTotal - gDone) : 0;
           const hasMissing = isReported && (eMiss > 0 || gMiss > 0);
           const isManualByAdmin = isReported && rec.submitter.includes('관리자');
+          const safeDeptParam = deptMeta.name.replace(/'/g, "\\'");
 
           const card = document.createElement('div');
           let borderClass = "border-slate-800 bg-[#111a2e]";
@@ -1089,7 +1143,7 @@ function doPost(e) {
             badgeHtml = `
               <div class="flex items-center gap-1.5">
                 <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-amber-300 border border-slate-700">N/A (0명 보고)</span>
-                <button onclick="cancelNaDepartment('${deptMeta.name}')" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200">
+                <button onclick="cancelNaDepartment('${safeDeptParam}')" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200">
                   해제
                 </button>
               </div>`;
@@ -1097,11 +1151,11 @@ function doPost(e) {
             borderClass = "border-amber-500/40 bg-amber-950/20";
             badgeHtml = `
               <div class="flex items-center gap-1.5">
-                <button onclick="openManualEntryModal('${deptMeta.name}')" class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-600/30 hover:bg-sky-600/50 text-sky-300 border border-sky-500/40 flex items-center gap-0.5">
+                <button onclick="openManualEntryModal('${safeDeptParam}')" class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-600/30 hover:bg-sky-600/50 text-sky-300 border border-sky-500/40 flex items-center gap-0.5">
                   <i data-lucide="edit-3" class="w-2.5 h-2.5"></i>
                   <span>수기입력</span>
                 </button>
-                <button onclick="openNaModal('${deptMeta.name}')" class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30">
+                <button onclick="openNaModal('${safeDeptParam}')" class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30">
                   N/A
                 </button>
                 <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">미보고</span>
@@ -1110,7 +1164,7 @@ function doPost(e) {
             borderClass = "border-red-500/50 bg-red-950/25";
             badgeHtml = `
               <div class="flex items-center gap-1.5">
-                <button onclick="openManualEntryModal('${deptMeta.name}')" class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">
+                <button onclick="openManualEntryModal('${safeDeptParam}')" class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">
                   수정
                 </button>
                 <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-600/30 text-red-300 border border-red-500/50 animate-pulse">미확인 ${eMiss + gMiss}명</span>
@@ -1118,7 +1172,7 @@ function doPost(e) {
           } else {
             badgeHtml = `
               <div class="flex items-center gap-1.5">
-                <button onclick="openManualEntryModal('${deptMeta.name}')" class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700">
+                <button onclick="openManualEntryModal('${safeDeptParam}')" class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700">
                   수정
                 </button>
                 <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-400">완료</span>
@@ -1195,7 +1249,7 @@ function doPost(e) {
     }
   }
 
-  function openManualEntryModal(deptName) {
+  window.openManualEntryModal = function(deptName) {
     const existingRec = departmentRecords[deptName];
     const isNa = !!naDepartments[deptName];
 
@@ -1222,19 +1276,19 @@ function doPost(e) {
     document.getElementById('syncManualToSheetCheck').checked = true;
     updateManualPreview();
     document.getElementById('manualEntryModal').classList.remove('hidden');
-    lucide.createIcons();
-  }
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  };
 
-  function autoFillAllEvacuated() {
+  window.autoFillAllEvacuated = function() {
     const eTotal = Number(document.getElementById('manualEmpTotal').value) || 0;
     const gTotal = Number(document.getElementById('manualGuestTotal').value) || 0;
     document.getElementById('manualEmpDone').value = eTotal;
     document.getElementById('manualGuestDone').value = gTotal;
     updateManualPreview();
     showToast("대피 완료 인원을 재실 인원과 일치시켰습니다.");
-  }
+  };
 
-  function updateManualPreview() {
+  window.updateManualPreview = function() {
     const eTotal = Number(document.getElementById('manualEmpTotal').value) || 0;
     const eDone = Number(document.getElementById('manualEmpDone').value) || 0;
     const gTotal = Number(document.getElementById('manualGuestTotal').value) || 0;
@@ -1260,10 +1314,10 @@ function doPost(e) {
       guestNote.innerText = `인솔 완료`;
       guestNote.className = "text-[10px] text-emerald-400 font-normal";
     }
-  }
+  };
 
-  async function handleManualSubmit(e) {
-    e.preventDefault();
+  window.handleManualSubmit = async function(e) {
+    if (e) e.preventDefault();
     const deptName = document.getElementById('manualDeptHidden').value;
     if (!deptName) return;
 
@@ -1294,15 +1348,19 @@ function doPost(e) {
     const label = document.getElementById('submitManualBtnLabel');
 
     if (syncToSheet && sheetUrl && !isDemoMode) {
-      spinner.classList.remove('hidden');
-      label.innerText = "시트 전송 중...";
-      submitBtn.disabled = true;
+      if (spinner) spinner.classList.remove('hidden');
+      if (label) label.innerText = "시트 전송 중...";
+      if (submitBtn) submitBtn.disabled = true;
 
       try {
         const payload = {
           timestamp: fullTimestampStr,
           dept: deptName,
           submitter: submitter,
+          empTotal: eTotal,
+          empDone: eDone,
+          guestTotal: gTotal,
+          guestDone: gDone,
           eTotal: eTotal,
           eDone: eDone,
           gTotal: gTotal,
@@ -1321,19 +1379,17 @@ function doPost(e) {
       } catch (err) {
         console.warn("구글 시트 POST 전송 실패(로컬 유지):", err);
       } finally {
-        spinner.classList.add('hidden');
-        label.innerText = "점호 입력 완료";
-        submitBtn.disabled = false;
+        if (spinner) spinner.classList.add('hidden');
+        if (label) label.innerText = "점호 입력 완료";
+        if (submitBtn) submitBtn.disabled = false;
       }
     }
 
-    // N/A 등록되어 있던 부서라면 N/A 자동 해제
     if (naDepartments[deptName]) {
       delete naDepartments[deptName];
       localStorage.setItem('eoc_na_depts', JSON.stringify(naDepartments));
     }
 
-    // 로컬 레코드 동기화
     departmentRecords[deptName] = {
       dept: deptName,
       submitter: submitter,
@@ -1347,7 +1403,6 @@ function doPost(e) {
     };
     localStorage.setItem('eoc_dept_records', JSON.stringify(departmentRecords));
 
-    // allRawRows 캐시 업데이트
     allRawRows.push([
       fullTimestampStr,
       deptName,
@@ -1360,19 +1415,29 @@ function doPost(e) {
     closeModal('manualEntryModal');
     renderAll();
     showToast(`'${deptName.replace(/\[.*?\]\s*/, '')}' 점호가 성공적으로 기록되었습니다.`);
-  }
+  };
 
-  function openResetModal() {
+  window.openResetModal = function() {
     document.getElementById('resetModal').classList.remove('hidden');
-    lucide.createIcons();
-  }
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  };
 
-  function executeReset() {
+  window.executeReset = async function() {
     const selectedMode = document.querySelector('input[name="resetMode"]:checked')?.value || 'newSession';
+    const executeBtn = document.getElementById('executeResetBtn');
+    const spinner = document.getElementById('resetSpinner');
+    const checkIcon = document.getElementById('resetCheckIcon');
+    const label = document.getElementById('resetBtnLabel');
 
     if (selectedMode === 'newSession') {
-      sessionStartTime = Date.now();
-      drillStartTime = Date.now();
+      const now = new Date();
+      const nowMs = now.getTime();
+      const todayYmd = getTodayYMD();
+      const timeOnly = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const fullTimestampStr = `${todayYmd} ${timeOnly}`;
+
+      sessionStartTime = nowMs;
+      drillStartTime = nowMs;
       localStorage.setItem('eoc_session_start_time', sessionStartTime);
       localStorage.setItem('eoc_drill_start_time', drillStartTime);
 
@@ -1385,6 +1450,48 @@ function doPost(e) {
       departmentRecords = {};
       localStorage.removeItem('eoc_dept_records');
 
+      if (sheetUrl && !isDemoMode) {
+        if (spinner) spinner.classList.remove('hidden');
+        if (checkIcon) checkIcon.classList.add('hidden');
+        if (label) label.innerText = "시트에 초기화 기록 중...";
+        if (executeBtn) executeBtn.disabled = true;
+
+        try {
+          const payload = {
+            type: 'RESET',
+            timestamp: fullTimestampStr,
+            dept: '[시스템] 세션 초기화',
+            submitter: '관제 관리자',
+            note: '새 비상대피 훈련 세션 시작 (이전 점호 기록 분리선)'
+          };
+
+          await fetch(sheetUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams(payload).toString()
+          });
+        } catch (err) {
+          console.warn("구글 시트 초기화 마커 기록 실패(로컬 세션만 시작):", err);
+        } finally {
+          if (spinner) spinner.classList.add('hidden');
+          if (checkIcon) checkIcon.classList.remove('hidden');
+          if (label) label.innerText = "초기화 실행";
+          if (executeBtn) executeBtn.disabled = false;
+        }
+      }
+
+      allRawRows.push([
+        fullTimestampStr,
+        '[시스템] 세션 초기화',
+        '관제 관리자',
+        0, 0, 0, 0,
+        '새 비상대피 훈련 세션 시작 (이전 점호 기록 분리선)'
+      ]);
+      localStorage.setItem('eoc_raw_rows', JSON.stringify(allRawRows));
+
       if (allRawRows && allRawRows.length > 0) {
         processRowsIntoRecords(allRawRows);
       }
@@ -1392,7 +1499,7 @@ function doPost(e) {
       updateDateFilterOptions();
       renderAll();
       closeModal('resetModal');
-      showToast("새 훈련 세션이 시작되었습니다. (이전 로그 자동 배제)");
+      showToast("새 훈련 세션이 시작되었으며, 구글 시트에 초기화 기록이 남았습니다.");
 
       if (!isDemoMode && sheetUrl) {
         fetchFromSheet();
@@ -1414,20 +1521,23 @@ function doPost(e) {
         fetchFromSheet();
       }
     }
-  }
+  };
 
-  function openNaModal(deptName) {
+  window.openNaModal = function(deptName) {
     pendingNaDeptName = deptName;
     document.getElementById('naModalDeptTitle').innerText = `[${deptName.replace(/\[.*?\]\s*/, '')}] N/A(0명 보고) 처리`;
-    document.getElementById('naCustomReasonInput').classList.add('hidden');
-    document.getElementById('naCustomReasonInput').value = '';
+    const customInput = document.getElementById('naCustomReasonInput');
+    if (customInput) {
+      customInput.classList.add('hidden');
+      customInput.value = '';
+    }
     const defaultRadio = document.querySelector('input[name="naReason"][value="당일 전원 재택/외근/휴가 (사업장 재실 0명)"]');
     if (defaultRadio) defaultRadio.checked = true;
     document.getElementById('syncNaToSheetCheck').checked = true;
     document.getElementById('naModal').classList.remove('hidden');
-  }
+  };
 
-  async function confirmNaDepartment() {
+  window.confirmNaDepartment = async function() {
     if (!pendingNaDeptName) return;
 
     const selectedRadio = document.querySelector('input[name="naReason"]:checked');
@@ -1448,15 +1558,19 @@ function doPost(e) {
     const btnLabel = document.getElementById('confirmNaBtnLabel');
 
     if (syncToSheet && sheetUrl && !isDemoMode) {
-      spinner.classList.remove('hidden');
-      btnLabel.innerText = "시트 전송 중...";
-      confirmBtn.disabled = true;
+      if (spinner) spinner.classList.remove('hidden');
+      if (btnLabel) btnLabel.innerText = "시트 전송 중...";
+      if (confirmBtn) confirmBtn.disabled = true;
 
       try {
         const payload = {
           timestamp: fullTimestampStr,
           dept: pendingNaDeptName,
           submitter: "관리자(N/A)",
+          empTotal: 0,
+          empDone: 0,
+          guestTotal: 0,
+          guestDone: 0,
           eTotal: 0,
           eDone: 0,
           gTotal: 0,
@@ -1476,9 +1590,9 @@ function doPost(e) {
       } catch (postErr) {
         console.warn("구글 시트 POST 전송 실패(로컬 반영 유지):", postErr);
       } finally {
-        spinner.classList.add('hidden');
-        btnLabel.innerText = "N/A 및 0명 보고 확정";
-        confirmBtn.disabled = false;
+        if (spinner) spinner.classList.add('hidden');
+        if (btnLabel) btnLabel.innerText = "N/A 및 0명 보고 확정";
+        if (confirmBtn) confirmBtn.disabled = false;
       }
     }
 
@@ -1513,9 +1627,9 @@ function doPost(e) {
     closeModal('naModal');
     renderAll();
     showToast(`'${pendingNaDeptName.replace(/\[.*?\]\s*/, '')}' N/A (인원 0명) 보고가 시트 및 현황판에 반영되었습니다.`);
-  }
+  };
 
-  function cancelNaDepartment(deptName) {
+  window.cancelNaDepartment = function(deptName) {
     if (naDepartments[deptName]) {
       delete naDepartments[deptName];
       localStorage.setItem('eoc_na_depts', JSON.stringify(naDepartments));
@@ -1528,24 +1642,24 @@ function doPost(e) {
       renderAll();
       showToast(`'${deptName.replace(/\[.*?\]\s*/, '')}' N/A 처리가 해제되었습니다.`);
     }
-  }
+  };
 
-  function toggleGroup(groupName) {
+  window.toggleGroup = function(groupName) {
     groupExpandedState[groupName] = !groupExpandedState[groupName];
     renderDeptGroups();
-    lucide.createIcons();
-  }
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  };
 
-  function toggleAllGroups(expand) {
+  window.toggleAllGroups = function(expand) {
     const groups = [...new Set(STANDARD_DEPARTMENTS.map(d => d.group))];
     groups.forEach(g => {
       groupExpandedState[g] = expand;
     });
     renderDeptGroups();
-    lucide.createIcons();
-  }
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  };
 
-  function setFilter(type) {
+  window.setFilter = function(type) {
     currentFilter = type;
     const tabs = [
       { id: 'unreported', activeClass: 'bg-amber-600/30 text-amber-300 border border-amber-500/40 font-bold' },
@@ -1567,10 +1681,10 @@ function doPost(e) {
     });
 
     renderDeptGroups();
-    lucide.createIcons();
-  }
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  };
 
-  function copyNudgeMessage() {
+  window.copyNudgeMessage = function() {
     const metrics = calculateMetrics();
     if (metrics.unreportedDepts.length === 0) {
       showToast("모든 부서가 제출 완료되었습니다.");
@@ -1582,9 +1696,9 @@ function doPost(e) {
 
     copyToClipboard(msg);
     showToast("독촉 카톡 문구가 복사되었습니다!");
-  }
+  };
 
-  function openBriefingModal() {
+  window.openBriefingModal = function() {
     const metrics = calculateMetrics();
     const elapsedMins = Math.floor((Date.now() - drillStartTime) / 60000);
 
@@ -1622,30 +1736,48 @@ function doPost(e) {
 
     document.getElementById('briefingContent').innerText = text;
     document.getElementById('briefingModal').classList.remove('hidden');
-    lucide.createIcons();
-  }
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  };
 
-  function copyBriefingText() {
+  window.copyBriefingText = function() {
     const text = document.getElementById('briefingContent').innerText;
     copyToClipboard(text);
     const label = document.getElementById('copyBtnLabel');
-    label.innerText = "복사 완료!";
-    setTimeout(() => { label.innerText = "브리핑 복사"; }, 2000);
+    if (label) {
+      label.innerText = "복사 완료!";
+      setTimeout(() => { label.innerText = "브리핑 복사"; }, 2000);
+    }
     showToast("119 브리핑 문구가 복사되었습니다.");
-  }
+  };
 
-  function copyAppsScriptSnippet() {
-    const code = document.getElementById('appsScriptSnippet').innerText;
-    copyToClipboard(code);
-    showToast("Google Apps Script 연동 코드가 복사되었습니다.");
-  }
+  window.copyAppsScriptSnippet = function() {
+    const el = document.getElementById('appsScriptSnippet');
+    if (el) {
+      copyToClipboard(el.innerText);
+      showToast("Google Apps Script 연동 코드가 복사되었습니다.");
+    }
+  };
 
-  function copyToClipboard(str) {
+  window.copyToClipboard = function(str) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(str).catch(() => fallbackCopyToClipboard(str));
+    } else {
+      fallbackCopyToClipboard(str);
+    }
+  };
+
+  function fallbackCopyToClipboard(str) {
     const ta = document.createElement('textarea');
     ta.value = str;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
     document.body.appendChild(ta);
     ta.select();
-    document.execCommand('copy');
+    try {
+      document.execCommand('copy');
+    } catch (e) {
+      console.warn("Clipboard fallback failed", e);
+    }
     document.body.removeChild(ta);
   }
 
@@ -1687,20 +1819,23 @@ function doPost(e) {
     }
   }
 
-  function showToast(msg) {
+  window.showToast = function(msg) {
     const toast = document.getElementById('toast');
-    document.getElementById('toastMessage').innerText = msg;
+    const toastMsg = document.getElementById('toastMessage');
+    if (!toast || !toastMsg) return;
+    toastMsg.innerText = msg;
     toast.classList.remove('translate-y-24', 'opacity-0');
     setTimeout(() => {
       toast.classList.add('translate-y-24', 'opacity-0');
     }, 2500);
-  }
+  };
 
-  function closeModal(id) {
-    document.getElementById(id).classList.add('hidden');
-  }
+  window.closeModal = function(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  };
 
-  function saveSettings() {
+  window.saveSettings = function() {
     const inputVal = document.getElementById('sheetUrlInput').value.trim();
     sheetUrl = inputVal || DEFAULT_SCRIPT_URL;
     pollInterval = Number(document.getElementById('syncIntervalSelect').value);
@@ -1717,7 +1852,7 @@ function doPost(e) {
       document.getElementById('demoModeLabel').innerText = "모의 데이터";
       loadMockData();
     }
-  }
+  };
 
   function restartSync() {
     if (syncTimer) clearInterval(syncTimer);
@@ -1730,12 +1865,14 @@ function doPost(e) {
   function initTimers() {
     setInterval(() => {
       const now = new Date();
-      document.getElementById('currentTime').innerText = now.toLocaleTimeString('ko-KR');
+      const timeEl = document.getElementById('currentTime');
+      if (timeEl) timeEl.innerText = now.toLocaleTimeString('ko-KR');
 
       const elapsedSec = Math.floor((Date.now() - drillStartTime) / 1000);
       const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
       const secs = String(elapsedSec % 60).padStart(2, '0');
-      document.getElementById('incidentTimer').innerText = `${mins}:${secs}`;
+      const timerEl = document.getElementById('incidentTimer');
+      if (timerEl) timerEl.innerText = `${mins}:${secs}`;
     }, 1000);
   }
 
@@ -1746,6 +1883,7 @@ function doPost(e) {
     radios.forEach(r => {
       r.addEventListener('change', (e) => {
         const customInput = document.getElementById('naCustomReasonInput');
+        if (!customInput) return;
         if (e.target.value === 'custom') {
           customInput.classList.remove('hidden');
           customInput.focus();
@@ -1755,42 +1893,58 @@ function doPost(e) {
       });
     });
 
-    document.getElementById('openResetModalBtn').addEventListener('click', openResetModal);
-    document.getElementById('openBriefingBtn').addEventListener('click', openBriefingModal);
-    document.getElementById('openSettingsBtn').addEventListener('click', () => {
-      document.getElementById('sheetUrlInput').value = sheetUrl;
-      document.getElementById('settingsModal').classList.remove('hidden');
-    });
+    const resetBtn = document.getElementById('openResetModalBtn');
+    if (resetBtn) resetBtn.addEventListener('click', openResetModal);
 
-    document.getElementById('targetDateSelect').addEventListener('change', (e) => {
-      selectedDateFilter = e.target.value;
-      localStorage.setItem('eoc_selected_date', selectedDateFilter);
-      if (allRawRows && allRawRows.length > 0) {
-        processRowsIntoRecords(allRawRows);
-      }
-      updateDateFilterOptions();
-      renderAll();
-      showToast(`'${e.target.options[e.target.selectedIndex].text}' 기준으로 화면을 전환했습니다.`);
-    });
+    const briefBtn = document.getElementById('openBriefingBtn');
+    if (briefBtn) briefBtn.addEventListener('click', openBriefingModal);
 
-    document.getElementById('deptSearchInput').addEventListener('input', (e) => {
-      searchQuery = e.target.value;
-      renderDeptGroups();
-      lucide.createIcons();
-    });
+    const settBtn = document.getElementById('openSettingsBtn');
+    if (settBtn) {
+      settBtn.addEventListener('click', () => {
+        document.getElementById('sheetUrlInput').value = sheetUrl;
+        document.getElementById('settingsModal').classList.remove('hidden');
+      });
+    }
 
-    document.getElementById('toggleDemoBtn').addEventListener('click', () => {
-      isDemoMode = !isDemoMode;
-      if (isDemoMode) {
-        document.getElementById('demoModeLabel').innerText = "모의 데이터";
-        loadMockData();
-      } else {
-        document.getElementById('demoModeLabel').innerText = "실제 시트 연동";
+    const dateSelect = document.getElementById('targetDateSelect');
+    if (dateSelect) {
+      dateSelect.addEventListener('change', (e) => {
+        selectedDateFilter = e.target.value;
+        localStorage.setItem('eoc_selected_date', selectedDateFilter);
+        if (allRawRows && allRawRows.length > 0) {
+          processRowsIntoRecords(allRawRows);
+        }
+        updateDateFilterOptions();
         renderAll();
-        if (sheetUrl) restartSync();
-        showToast("실제 시트 수신 모드로 전환되었습니다.");
-      }
-    });
+        showToast(`'${e.target.options[e.target.selectedIndex].text}' 기준으로 화면을 전환했습니다.`);
+      });
+    }
+
+    const searchInput = document.getElementById('deptSearchInput');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        searchQuery = e.target.value;
+        renderDeptGroups();
+        if (window.lucide && lucide.createIcons) lucide.createIcons();
+      });
+    }
+
+    const demoBtn = document.getElementById('toggleDemoBtn');
+    if (demoBtn) {
+      demoBtn.addEventListener('click', () => {
+        isDemoMode = !isDemoMode;
+        if (isDemoMode) {
+          document.getElementById('demoModeLabel').innerText = "모의 데이터";
+          loadMockData();
+        } else {
+          document.getElementById('demoModeLabel').innerText = "실제 시트 연동";
+          renderAll();
+          if (sheetUrl) restartSync();
+          showToast("실제 시트 수신 모드로 전환되었습니다.");
+        }
+      });
+    }
 
     if (sheetUrl) {
       isDemoMode = false;
@@ -1805,7 +1959,9 @@ function doPost(e) {
       loadMockData();
     }
 
-    lucide.createIcons();
+    if (window.lucide && lucide.createIcons) {
+      lucide.createIcons();
+    }
   };
   </script>
 </body>
