@@ -1433,7 +1433,7 @@ function doPost(e) {
       const now = new Date();
       const nowMs = now.getTime();
       const todayYmd = getTodayYMD();
-      const timeOnly = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const timeOnly = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
       const fullTimestampStr = `${todayYmd} ${timeOnly}`;
 
       sessionStartTime = nowMs;
@@ -1465,16 +1465,18 @@ function doPost(e) {
             note: '새 비상대피 훈련 세션 시작 (이전 점호 기록 분리선)'
           };
 
+          // [개선] Google Apps Script 웹앱이 가장 안정적으로 수신할 수 있도록 text/plain 본문 전송
           await fetch(sheetUrl, {
             method: 'POST',
             mode: 'no-cors',
             headers: {
-              'Content-Type': 'application/x-www-form-urlencoded'
+              'Content-Type': 'text/plain;charset=utf-8'
             },
-            body: new URLSearchParams(payload).toString()
+            body: JSON.stringify(payload)
           });
+          console.log("[EOC] 초기화 마커 전송 완료:", payload);
         } catch (err) {
-          console.warn("구글 시트 초기화 마커 기록 실패(로컬 세션만 시작):", err);
+          console.warn("[EOC] 구글 시트 초기화 마커 기록 실패(로컬 세션만 시작):", err);
         } finally {
           if (spinner) spinner.classList.add('hidden');
           if (checkIcon) checkIcon.classList.remove('hidden');
@@ -1501,8 +1503,9 @@ function doPost(e) {
       closeModal('resetModal');
       showToast("새 훈련 세션이 시작되었으며, 구글 시트에 초기화 기록이 남았습니다.");
 
+      // 시트와 즉시 동기화 재수행
       if (!isDemoMode && sheetUrl) {
-        fetchFromSheet();
+        setTimeout(fetchFromSheet, 1000);
       }
     } else {
       sessionStartTime = 0;
@@ -1523,18 +1526,105 @@ function doPost(e) {
     }
   };
 
-  window.openNaModal = function(deptName) {
-    pendingNaDeptName = deptName;
-    document.getElementById('naModalDeptTitle').innerText = `[${deptName.replace(/\[.*?\]\s*/, '')}] N/A(0명 보고) 처리`;
-    const customInput = document.getElementById('naCustomReasonInput');
-    if (customInput) {
-      customInput.classList.add('hidden');
-      customInput.value = '';
+  window.handleManualSubmit = async function(e) {
+    if (e) e.preventDefault();
+    const deptName = document.getElementById('manualDeptHidden').value;
+    if (!deptName) return;
+
+    const submitter = document.getElementById('manualSubmitterInput').value.trim() || "관리자 대리입력";
+    const eTotal = Math.max(0, Number(document.getElementById('manualEmpTotal').value) || 0);
+    const eDone = Math.max(0, Number(document.getElementById('manualEmpDone').value) || 0);
+    const gTotal = Math.max(0, Number(document.getElementById('manualGuestTotal').value) || 0);
+    const gDone = Math.max(0, Number(document.getElementById('manualGuestDone').value) || 0);
+    const note = document.getElementById('manualNoteInput').value.trim() || "-";
+
+    if (eDone > eTotal) {
+      showToast("임직원 대피 인원이 총 재실 인원을 초과할 수 없습니다.");
+      return;
     }
-    const defaultRadio = document.querySelector('input[name="naReason"][value="당일 전원 재택/외근/휴가 (사업장 재실 0명)"]');
-    if (defaultRadio) defaultRadio.checked = true;
-    document.getElementById('syncNaToSheetCheck').checked = true;
-    document.getElementById('naModal').classList.remove('hidden');
+    if (gDone > gTotal) {
+      showToast("내방객 대피 인원이 총 재실 인원을 초과할 수 없습니다.");
+      return;
+    }
+
+    const now = new Date();
+    const todayYmd = getTodayYMD();
+    const timeOnly = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    const fullTimestampStr = `${todayYmd} ${timeOnly}`;
+
+    const syncToSheet = document.getElementById('syncManualToSheetCheck').checked;
+    const submitBtn = document.getElementById('submitManualBtn');
+    const spinner = document.getElementById('submitManualSpinner');
+    const label = document.getElementById('submitManualBtnLabel');
+
+    if (syncToSheet && sheetUrl && !isDemoMode) {
+      if (spinner) spinner.classList.remove('hidden');
+      if (label) label.innerText = "시트 전송 중...";
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const payload = {
+          timestamp: fullTimestampStr,
+          dept: deptName,
+          submitter: submitter,
+          empTotal: eTotal,
+          empDone: eDone,
+          guestTotal: gTotal,
+          guestDone: gDone,
+          eTotal: eTotal,
+          eDone: eDone,
+          gTotal: gTotal,
+          gDone: gDone,
+          note: note
+        };
+
+        await fetch(sheetUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: {
+            'Content-Type': 'text/plain;charset=utf-8'
+          },
+          body: JSON.stringify(payload)
+        });
+      } catch (err) {
+        console.warn("구글 시트 POST 전송 실패(로컬 유지):", err);
+      } finally {
+        if (spinner) spinner.classList.add('hidden');
+        if (label) label.innerText = "점호 입력 완료";
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    }
+
+    if (naDepartments[deptName]) {
+      delete naDepartments[deptName];
+      localStorage.setItem('eoc_na_depts', JSON.stringify(naDepartments));
+    }
+
+    departmentRecords[deptName] = {
+      dept: deptName,
+      submitter: submitter,
+      eTotal: eTotal,
+      eDone: eDone,
+      gTotal: gTotal,
+      gDone: gDone,
+      note: note,
+      updatedAt: timeOnly,
+      rawDate: todayYmd
+    };
+    localStorage.setItem('eoc_dept_records', JSON.stringify(departmentRecords));
+
+    allRawRows.push([
+      fullTimestampStr,
+      deptName,
+      submitter,
+      eTotal, eDone, gTotal, gDone,
+      note
+    ]);
+    localStorage.setItem('eoc_raw_rows', JSON.stringify(allRawRows));
+
+    closeModal('manualEntryModal');
+    renderAll();
+    showToast(`'${deptName.replace(/\[.*?\]\s*/, '')}' 점호가 성공적으로 기록되었습니다.`);
   };
 
   window.confirmNaDepartment = async function() {
@@ -1549,7 +1639,7 @@ function doPost(e) {
 
     const now = new Date();
     const todayYmd = getTodayYMD();
-    const timeOnly = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const timeOnly = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     const fullTimestampStr = `${todayYmd} ${timeOnly}`;
 
     const syncToSheet = document.getElementById('syncNaToSheetCheck').checked;
@@ -1582,9 +1672,9 @@ function doPost(e) {
           method: 'POST',
           mode: 'no-cors',
           headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
+            'Content-Type': 'text/plain;charset=utf-8'
           },
-          body: new URLSearchParams(payload).toString()
+          body: JSON.stringify(payload)
         });
 
       } catch (postErr) {
