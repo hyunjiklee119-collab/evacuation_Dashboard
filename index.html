@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>비상대피 인원점호 실시간 집계 현황</title>
+  <title>비상대피 인원점호 실시간 집계 현황판</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons -->
@@ -38,7 +38,6 @@
       color: #f1f5f9;
       -webkit-tap-highlight-color: transparent;
     }
-    /* Touch friendly custom scrollbars */
     ::-webkit-scrollbar {
       width: 4px;
       height: 4px;
@@ -72,6 +71,17 @@
 
       <!-- Quick Action Controls -->
       <div class="flex items-center gap-1.5 flex-shrink-0">
+        <!-- Date Selector (과거 훈련 회차 리뷰 및 당일 훈련 분리) -->
+        <select id="targetDateSelect" class="bg-slate-800 border border-slate-700 text-sky-300 text-[11px] font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-sky-500">
+          <option value="today">오늘 훈련</option>
+          <option value="all">전체 누적</option>
+        </select>
+
+        <!-- Reset Button -->
+        <button id="openResetModalBtn" title="훈련 초기화 / 캐시 리셋" class="p-1.5 rounded-md bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 transition">
+          <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+        </button>
+
         <!-- Mock / Live Mode Toggle -->
         <button id="toggleDemoBtn" class="px-2 py-1 rounded-md text-[11px] font-semibold bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 transition">
           <span id="demoModeLabel">모의 데이터</span>
@@ -91,6 +101,15 @@
   </header>
 
   <main class="max-w-2xl mx-auto w-full px-3 py-3 space-y-3 flex-1">
+
+    <!-- Active Session Indicator Banner -->
+    <div id="sessionBanner" class="bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-2 flex items-center justify-between text-xs text-slate-300">
+      <div class="flex items-center gap-2">
+        <i data-lucide="calendar" class="w-3.5 h-3.5 text-sky-400"></i>
+        <span>조회 기준: <strong id="activeDateLabel" class="text-sky-300">오늘 (당일 제출분)</strong></span>
+      </div>
+      <button onclick="openResetModal()" class="text-[11px] text-red-400 hover:text-red-300 underline font-medium">새 훈련 시작(초기화)</button>
+    </div>
 
     <!-- 1. Headcount Rollup Scorecard (핵심 취합 집계) -->
     <div class="bg-gradient-to-br from-slate-900 to-[#111a2e] border border-slate-800 rounded-2xl p-3.5 shadow-lg">
@@ -153,7 +172,7 @@
       </div>
     </div>
 
-    <!-- 2. Unreported Departments Warning & Action Card (미보고 부서 전용 알림판) -->
+    <!-- 2. Unreported Departments Warning Card -->
     <div id="unreportedCard" class="bg-amber-950/20 border border-amber-500/40 rounded-2xl p-3 shadow-md space-y-2.5">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-1.5 text-amber-400 font-bold text-xs">
@@ -170,59 +189,105 @@
         아래 부서는 아직 집결 현황을 제출하지 않았습니다. 단체채팅방을 통해 점호를 재촉하십시오.
       </p>
 
-      <!-- Chips of Unreported Departments -->
       <div id="unreportedListContainer" class="flex flex-wrap gap-1.5 pt-1">
         <!-- Dynamically injected chips -->
       </div>
     </div>
 
     <!-- 3. Department Status List Toolbar -->
-  <div class="space-y-2 pt-1">
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-1.5 text-xs font-bold text-slate-200">
-        <i data-lucide="list-checks" class="w-4 h-4 text-sky-400"></i>
-        <span>부서별 점호 현황 (그룹별 아코디언)</span>
+    <div class="space-y-2 pt-1">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+          <i data-lucide="list-checks" class="w-4 h-4 text-sky-400"></i>
+          <span>부서별 점호 현황 (그룹별 아코디언)</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="toggleAllGroups(true)" class="text-[11px] text-sky-400 hover:text-sky-300 font-medium">전체 펼침</button>
+          <span class="text-slate-600 text-xs">|</span>
+          <button onclick="toggleAllGroups(false)" class="text-[11px] text-slate-400 hover:text-slate-300 font-medium">전체 축소</button>
+        </div>
       </div>
-      <div class="flex items-center gap-2">
-        <button onclick="toggleAllGroups(true)" class="text-[11px] text-sky-400 hover:text-sky-300 font-medium">전체 펼침</button>
-        <span class="text-slate-600 text-xs">|</span>
-        <button onclick="toggleAllGroups(false)" class="text-[11px] text-slate-400 hover:text-slate-300 font-medium">전체 축소</button>
+
+      <!-- Quick Filter Pills -->
+      <div class="grid grid-cols-5 gap-1 p-1 bg-slate-900 border border-slate-800 rounded-xl text-[10px]">
+        <button onclick="setFilter('unreported')" id="filterTabUnreported" class="py-1.5 rounded-lg font-bold text-slate-400 hover:text-slate-200 transition">
+          미보고 (<span id="countPillUnreported">0</span>)
+        </button>
+        <button onclick="setFilter('missing')" id="filterTabMissing" class="py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition">
+          잔류자 (<span id="countPillMissing">0</span>)
+        </button>
+        <button onclick="setFilter('complete')" id="filterTabComplete" class="py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition">
+          완료 (<span id="countPillComplete">0</span>)
+        </button>
+        <button onclick="setFilter('na')" id="filterTabNa" class="py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition">
+          N/A (<span id="countPillNa">0</span>)
+        </button>
+        <button onclick="setFilter('all')" id="filterTabAll" class="py-1.5 rounded-lg font-bold bg-sky-600/30 text-sky-300 border border-sky-500/40 transition">
+          전체 (<span id="countPillAll">0</span>)
+        </button>
+      </div>
+
+      <!-- Quick Search Input -->
+      <div class="relative">
+        <i data-lucide="search" class="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5"></i>
+        <input type="text" id="deptSearchInput" placeholder="부서명/본부명 검색 (예: SYSTEM, SEC, CS, 제조)" 
+          class="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition">
       </div>
     </div>
 
-    <!-- Quick Filter Pills -->
-    <div class="grid grid-cols-5 gap-1 p-1 bg-slate-900 border border-slate-800 rounded-xl text-[10px]">
-      <button onclick="setFilter('unreported')" id="filterTabUnreported" class="py-1.5 rounded-lg font-bold bg-amber-600/30 text-amber-300 border border-amber-500/40 transition">
-        미보고 (<span id="countPillUnreported">0</span>)
-      </button>
-      <button onclick="setFilter('missing')" id="filterTabMissing" class="py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition">
-        잔류자 (<span id="countPillMissing">0</span>)
-      </button>
-      <button onclick="setFilter('complete')" id="filterTabComplete" class="py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition">
-        완료 (<span id="countPillComplete">0</span>)
-      </button>
-      <button onclick="setFilter('na')" id="filterTabNa" class="py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition">
-        N/A (<span id="countPillNa">0</span>)
-      </button>
-      <button onclick="setFilter('all')" id="filterTabAll" class="py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition">
-        전체 (<span id="countPillAll">0</span>)
-      </button>
+    <!-- Department List Cards (Grouped Accordion) -->
+    <div id="deptGroupContainer" class="space-y-3">
+      <!-- Injected dynamically by groups -->
     </div>
 
-    <!-- Quick Search Input -->
-    <div class="relative">
-      <i data-lucide="search" class="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5"></i>
-      <input type="text" id="deptSearchInput" placeholder="부서명/본부명 검색 (예: SYSTEM, SEC, CS, 제조)" 
-        class="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition">
+  </main>
+
+  <!-- 초기화(리셋) 모달 -->
+  <div id="resetModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
+    <div class="bg-slate-900 border border-red-500/40 rounded-2xl max-w-sm w-full p-4 shadow-2xl space-y-3.5">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+        <div class="flex items-center gap-1.5 text-red-400 font-bold text-sm">
+          <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+          <span>새 훈련 세션 시작 &amp; 초기화</span>
+        </div>
+        <button onclick="closeModal('resetModal')" class="text-slate-400 hover:text-white p-1">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <p class="text-xs text-slate-300 leading-relaxed">
+        구글 시트의 기존 로그를 직접 지우지 않아도 새 훈련을 깨끗하게 시작할 수 있습니다. 초기화 범위를 선택해 주세요:
+      </p>
+
+      <div class="space-y-2 text-xs">
+        <label class="flex items-start gap-2.5 p-2.5 rounded-xl bg-slate-800/70 border border-slate-700 cursor-pointer hover:bg-slate-800 transition">
+          <input type="radio" name="resetMode" value="newSession" checked class="mt-0.5 accent-red-500">
+          <div>
+            <div class="font-bold text-slate-100">새 훈련 세션 시작 (권장)</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">지금 이 시각(기준) 이후로 제출되는 응답만 화면에 반영하고, 타이머(T+00:00) 및 N/A 설정을 리셋합니다. 과거 시트 기록은 보존됩니다.</div>
+          </div>
+        </label>
+
+        <label class="flex items-start gap-2.5 p-2.5 rounded-xl bg-slate-800/70 border border-slate-700 cursor-pointer hover:bg-slate-800 transition">
+          <input type="radio" name="resetMode" value="clearCache" class="mt-0.5 accent-red-500">
+          <div>
+            <div class="font-bold text-slate-100">로컬 화면 캐시만 비우기</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">화면의 로컬 캐시를 비우고 구글 시트 원본 데이터를 처음부터 다시 조회합니다.</div>
+          </div>
+        </label>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="executeReset()" class="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs transition active:scale-95 flex items-center gap-1.5">
+          <i data-lucide="check" class="w-3.5 h-3.5"></i>
+          <span>초기화 실행</span>
+        </button>
+        <button onclick="closeModal('resetModal')" class="px-3.5 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-medium">
+          취소
+        </button>
+      </div>
     </div>
   </div>
-
-  <!-- Department List Cards (Grouped Accordion) -->
-  <div id="deptGroupContainer" class="space-y-3">
-    <!-- Injected dynamically by groups -->
-  </div>
-
-</main>
 
   <!-- N/A (열외 처리) 설정 모달 -->
   <div id="naModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
@@ -272,7 +337,7 @@
     </div>
   </div>
 
-  <!-- 119 Handover Briefing Modal (Mobile Optimized) -->
+  <!-- 119 Handover Briefing Modal -->
   <div id="briefingModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
     <div class="bg-slate-900 border border-amber-500/40 rounded-2xl max-w-lg w-full p-4 shadow-2xl space-y-3">
       <div class="flex items-center justify-between pb-2 border-b border-slate-800">
@@ -300,7 +365,7 @@
     </div>
   </div>
 
-  <!-- Settings Modal (Sheet URL & Polling) -->
+  <!-- Settings Modal -->
   <div id="settingsModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
     <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-4 shadow-2xl space-y-3">
       <div class="flex items-center justify-between pb-2 border-b border-slate-800">
@@ -338,56 +403,55 @@
     </div>
   </div>
 
-  <!-- Custom Mobile Toast Feedback -->
+  <!-- Toast Notification -->
   <div id="toast" class="fixed bottom-5 inset-x-4 max-w-sm mx-auto z-50 transform translate-y-24 opacity-0 transition-all duration-300 bg-slate-800/95 border border-slate-700 text-slate-100 px-4 py-2.5 rounded-xl shadow-2xl flex items-center justify-center gap-2 text-xs">
     <i data-lucide="info" class="w-4 h-4 text-sky-400" id="toastIcon"></i>
     <span id="toastMessage">알림 메시지</span>
   </div>
 
   <script>
-  // ★ [필수 설정] 여기에 발급받으신 Apps Script 웹 앱 URL(exec)을 입력해두면,
-  // 어떤 모바일 기기에서든 대시보드를 열었을 때 자동으로 실제 시트가 연동됩니다!
   const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxSOyEmlT9UBfacs7QR0mvMoTKjNuXiXUMz_lyrCqTtxL_m2lX-7AB1zyG0CXrs5XF4cQ/exec";
 
-  // 부서 목록 정의: 실제 조직 체계 반영 (총 19개 부서/조직)
+  // 부서 목록 재정의 (조직 및 포함 직책/그룹 반영)
   const STANDARD_DEPARTMENTS = [
-    // [SYSTEM본부] (6개)
-    { id: "SYS_1", group: "SYSTEM본부", name: "[SYSTEM본부] SEC영업팀" },
-    { id: "SYS_2", group: "SYSTEM본부", name: "[SYSTEM본부] SKH영업팀" },
-    { id: "SYS_3", group: "SYSTEM본부", name: "[SYSTEM본부] CS팀(CS1G,CS2G)" },
-    { id: "SYS_4", group: "SYSTEM본부", name: "[SYSTEM본부] 제조팀(설비기술G)" },
-    { id: "SYS_5", group: "SYSTEM본부", name: "[SYSTEM본부] 생산기술팀(기구G,제어G,TSG)" },
-    { id: "SYS_6", group: "SYSTEM본부", name: "[SYSTEM본부] 품질G" },
+    // [SYSTEM본부]
+    { id: "SYS_1", group: "SYSTEM본부", name: "SEC영업팀 (SYSTEM본부장)" },
+    { id: "SYS_2", group: "SYSTEM본부", name: "SKH영업팀" },
+    { id: "SYS_3", group: "SYSTEM본부", name: "CS팀(CS1G,CS2G)" },
+    { id: "SYS_4", group: "SYSTEM본부", name: "제조팀(설비기술G)" },
+    { id: "SYS_5", group: "SYSTEM본부", name: "생산기술팀(기구G,제어G,TSG)" },
+    { id: "SYS_6", group: "SYSTEM본부", name: "품질G" },
 
-    // [연구소] (3개)
-    { id: "LAB_1", group: "연구소", name: "[연구소] 신제품개발G" },
-    { id: "LAB_2", group: "연구소", name: "[연구소] 연구기술G" },
-    { id: "LAB_3", group: "연구소", name: "[연구소] 정제기TF" },
+    // [연구소]
+    { id: "LAB_1", group: "연구소", name: "신제품개발G (연구소장, GSS, SCR)" },
+    { id: "LAB_2", group: "연구소", name: "연구기술G (연구지원)" },
+    { id: "LAB_3", group: "연구소", name: "정제기TF" },
 
-    // [경영지원본부] (4개)
-    { id: "MGT_1", group: "경영지원본부", name: "[경영지원본부] 기획팀(EPC원가관리G)" },
-    { id: "MGT_2", group: "경영지원본부", name: "[경영지원본부] 재무팀(회계G,자금G)" },
-    { id: "MGT_3", group: "경영지원본부", name: "[경영지원본부] 구매팀" },
-    { id: "MGT_4", group: "경영지원본부", name: "[경영지원본부] 준법G" },
+    // [경영지원본부]
+    { id: "MGT_1", group: "경영지원본부", name: "기획팀 (경영지원본부장, EPC원가관리G)" },
+    { id: "MGT_2", group: "경영지원본부", name: "재무팀(회계G,자금G)" },
+    { id: "MGT_3", group: "경영지원본부", name: "구매팀" },
+    { id: "MGT_4", group: "경영지원본부", name: "준법G" },
 
-    // [인사본부] (3개)
-    { id: "HR_1", group: "인사본부", name: "[인사본부] PEOPLE팀" },
-    { id: "HR_2", group: "인사본부", name: "[인사본부] CULTURE팀" },
-    { id: "HR_3", group: "인사본부", name: "[인사본부] 정보전략팀" },
+    // [인사본부]
+    { id: "HR_1", group: "인사본부", name: "PEOPLE팀 (인사본부장, GA G)" },
+    { id: "HR_2", group: "인사본부", name: "CULTURE팀" },
+    { id: "HR_3", group: "인사본부", name: "정보전략팀" },
 
-    // 직속 조직 (2개)
-    { id: "DIR_1", group: "직속 조직", name: "안전환경팀(안전관리G)" },
-    { id: "DIR_2", group: "직속 조직", name: "글로벌사업개발팀" },
+    // [EPC본부]
+    { id: "EPC_1", group: "EPC본부", name: "EPC본부" },
 
-    // 경영진 (1개 - PEOPLE팀 점호 대행)
-    { id: "EXEC",  group: "경영진",   name: "[경영진] CEO,COO,본부장 (PEOPLE팀 대행)" }
+    // [직속 조직]
+    { id: "DIR_1", group: "직속 조직", name: "안전환경팀 (CEO, 안전관리G)" },
+    { id: "DIR_2", group: "직속 조직", name: "글로벌사업개발팀 (COO, 글로벌사업개발G, 기술지원TF)" }
   ];
 
-  // Global State
-  let currentFilter = 'all'; // 그룹 확인이 쉽도록 초기값 'all' 또는 'unreported'
+  // State Variables
+  let currentFilter = 'all';
   let searchQuery = '';
-  
-  // URL 파라미터(?url=...) 처리
+  let selectedDateFilter = localStorage.getItem('eoc_selected_date') || 'today';
+  let sessionStartTime = Number(localStorage.getItem('eoc_session_start_time') || 0);
+
   const urlParams = new URLSearchParams(window.location.search);
   const paramUrl = urlParams.get('url');
   if (paramUrl) {
@@ -399,51 +463,164 @@
   let isDemoMode = !sheetUrl;
   let pollInterval = 5000;
   let syncTimer = null;
-  let drillStartTime = Date.now();
+  let drillStartTime = Number(localStorage.getItem('eoc_drill_start_time')) || Date.now();
 
-  // N/A 처리된 부서 관리 (Key: deptName, Value: { reason: string, time: string })
   let naDepartments = JSON.parse(localStorage.getItem('eoc_na_depts') || '{}');
   let pendingNaDeptName = null;
-
-  // 그룹 아코디언 상태 관리 (기본값: false - 축소 상태)
   let groupExpandedState = {};
-
-  // Data Map: Key = Department Name (새로고침 시에도 유지되도록 localStorage 캐시 복원)
+  
+  // RAW Rows from Google Sheet cache
+  let allRawRows = JSON.parse(localStorage.getItem('eoc_raw_rows') || '[]');
+  // Filtered department records map
   let departmentRecords = JSON.parse(localStorage.getItem('eoc_dept_records') || '{}');
 
-  // 모의 테스트용 데이터 (실제 부서명 기준 샘플)
   const MOCK_SUBMISSIONS = [
-    { dept: "[SYSTEM본부] SEC영업팀", submitter: "김영업", eTotal: 12, eDone: 12, gTotal: 1, gDone: 1, note: "고객사 미팅객 1명 동반 대피 완료", time: "14:02:40" },
-    { dept: "[SYSTEM본부] CS팀(CS1G,CS2G)", submitter: "박씨에스", eTotal: 26, eDone: 25, gTotal: 2, gDone: 2, note: "CS2G 1명(정대리) 2층 휴게실 잔류 확인 중", time: "14:04:15" },
-    { dept: "[SYSTEM본부] 제조팀(설비기술G)", submitter: "최설비", eTotal: 30, eDone: 30, gTotal: 4, gDone: 4, note: "라인 셧다운 조치 후 전원 대피", time: "14:04:55" },
-    { dept: "[SYSTEM본부] 생산기술팀(기구G,제어G,TSG)", submitter: "정생기", eTotal: 18, eDone: 18, gTotal: 0, gDone: 0, note: "전원 옥외 집결 완료", time: "14:03:30" },
-    { dept: "[연구소] 신제품개발G", submitter: "조연구", eTotal: 14, eDone: 14, gTotal: 0, gDone: 0, note: "실험실 전원 차단 후 대피", time: "14:03:50" },
-    { dept: "[경영지원본부] 재무팀(회계G,자금G)", submitter: "윤재무", eTotal: 9, eDone: 9, gTotal: 0, gDone: 0, note: "금고 시건 완료 후 대피", time: "14:03:15" },
-    { dept: "[인사본부] PEOPLE팀", submitter: "강인사", eTotal: 8, eDone: 8, gTotal: 0, gDone: 0, note: "특이사항 없음", time: "14:02:20" },
-    { dept: "안전환경팀(안전관리G)", submitter: "이안전", eTotal: 6, eDone: 6, gTotal: 0, gDone: 0, note: "소방 펌프실 및 SVP 수동 개방 점검", time: "14:01:50" },
-    { dept: "[경영진] CEO,COO,본부장 (PEOPLE팀 대행)", submitter: "강인사(대행)", eTotal: 5, eDone: 5, gTotal: 0, gDone: 0, note: "CEO, COO 및 각 본부장 전원 집결 확인 완료", time: "14:02:50" }
+    { date: getTodayYMD(), dept: "SEC영업팀 (SYSTEM본부장)", submitter: "김영업", eTotal: 13, eDone: 13, gTotal: 1, gDone: 1, note: "본부장 및 고객사 미팅객 1명 동반 대피 완료", time: "14:02:40", fullDate: new Date().toISOString() },
+    { date: getTodayYMD(), dept: "CS팀(CS1G,CS2G)", submitter: "박씨에스", eTotal: 26, eDone: 25, gTotal: 2, gDone: 2, note: "CS2G 1명(정대리) 2층 휴게실 잔류 확인 중", time: "14:04:15", fullDate: new Date().toISOString() },
+    { date: getTodayYMD(), dept: "제조팀(설비기술G)", submitter: "최설비", eTotal: 30, eDone: 30, gTotal: 4, gDone: 4, note: "라인 셧다운 조치 후 전원 대피", time: "14:04:55", fullDate: new Date().toISOString() },
+    { date: getTodayYMD(), dept: "생산기술팀(기구G,제어G,TSG)", submitter: "정생기", eTotal: 18, eDone: 18, gTotal: 0, gDone: 0, note: "전원 옥외 집결 완료", time: "14:03:30", fullDate: new Date().toISOString() },
+    { date: getTodayYMD(), dept: "신제품개발G (연구소장, GSS, SCR)", submitter: "조연구", eTotal: 15, eDone: 15, gTotal: 0, gDone: 0, note: "연구소장, GSS, SCR 포함 실험실 차단 후 전원 대피", time: "14:03:50", fullDate: new Date().toISOString() },
+    { date: getTodayYMD(), dept: "연구기술G (연구지원)", submitter: "유기술", eTotal: 8, eDone: 8, gTotal: 0, gDone: 0, note: "연구지원 파트 포함 대피 완료", time: "14:03:40", fullDate: new Date().toISOString() },
+    { date: getTodayYMD(), dept: "기획팀 (경영지원본부장, EPC원가관리G)", submitter: "윤기획", eTotal: 11, eDone: 11, gTotal: 0, gDone: 0, note: "경영지원본부장 및 EPC원가관리G 전원 집결 완료", time: "14:03:15", fullDate: new Date().toISOString() },
+    { date: getTodayYMD(), dept: "PEOPLE팀 (인사본부장, GA G)", submitter: "강인사", eTotal: 12, eDone: 12, gTotal: 0, gDone: 0, note: "인사본부장, GA G 포함 전원 대피 확인", time: "14:02:20", fullDate: new Date().toISOString() },
+    { date: getTodayYMD(), dept: "EPC본부", submitter: "박이피씨", eTotal: 6, eDone: 6, gTotal: 0, gDone: 0, note: "EPC본부 전원 대피 완료", time: "14:03:05", fullDate: new Date().toISOString() },
+    { date: getTodayYMD(), dept: "안전환경팀 (CEO, 안전관리G)", submitter: "이안전", eTotal: 7, eDone: 7, gTotal: 0, gDone: 0, note: "CEO 대피 인솔 및 SVP 수동 개방 점검", time: "14:01:50", fullDate: new Date().toISOString() },
+    { date: getTodayYMD(), dept: "글로벌사업개발팀 (COO, 글로벌사업개발G, 기술지원TF)", submitter: "한글로벌", eTotal: 14, eDone: 14, gTotal: 1, gDone: 1, note: "COO 및 기술지원TF 협력사 1명 대피 완료", time: "14:02:50", fullDate: new Date().toISOString() }
   ];
 
+  function getTodayYMD() {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  // Parse raw date string into YYYY-MM-DD
+  function extractDateString(timestampVal) {
+    if (!timestampVal) return '';
+    const str = String(timestampVal).trim();
+    // Case 1: ISO or '2026-10-19 14:00:00'
+    const dashMatch = str.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (dashMatch) {
+      return `${dashMatch[1]}-${dashMatch[2].padStart(2, '0')}-${dashMatch[3].padStart(2, '0')}`;
+    }
+    // Case 2: Date object string or fallback
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      const y = parsed.getFullYear();
+      const m = String(parsed.getMonth() + 1).padStart(2, '0');
+      const d = String(parsed.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    return '';
+  }
+
   function loadMockData() {
-    departmentRecords = {};
-    MOCK_SUBMISSIONS.forEach(sub => {
-      departmentRecords[sub.dept] = {
-        dept: sub.dept,
-        submitter: sub.submitter,
-        eTotal: Number(sub.eTotal),
-        eDone: Number(sub.eDone),
-        gTotal: Number(sub.gTotal),
-        gDone: Number(sub.gDone),
-        note: sub.note,
-        updatedAt: sub.time
-      };
-    });
-    localStorage.setItem('eoc_dept_records', JSON.stringify(departmentRecords));
+    allRawRows = MOCK_SUBMISSIONS.map(sub => [
+      `${sub.date} ${sub.time}`,
+      sub.dept,
+      sub.submitter,
+      sub.eTotal,
+      sub.eDone,
+      sub.gTotal,
+      sub.gDone,
+      sub.note
+    ]);
+    processRowsIntoRecords(allRawRows);
+    updateDateFilterOptions();
     renderAll();
     showToast("모의 점호 데이터가 로드되었습니다.");
   }
 
-  // 핵심 집계 및 미보고 부서 추출 로직 (N/A 부서 예외 처리 포함)
+  function processRowsIntoRecords(rows) {
+    const today = getTodayYMD();
+    const newRecords = {};
+
+    rows.forEach((row, idx) => {
+      if (!row || row.length < 5) return;
+      const rawTimestamp = row[0];
+      const dept = String(row[1] || '').trim();
+      if (!dept) return;
+
+      const dateStr = extractDateString(rawTimestamp);
+      const rowTimestampMs = new Date(rawTimestamp).getTime();
+
+      // 세션 시작 기준 필터 (새 훈련 세션을 시작한 경우 해당 시각 이전 데이터는 제외)
+      if (sessionStartTime > 0 && !isNaN(rowTimestampMs) && rowTimestampMs < sessionStartTime) {
+        return;
+      }
+
+      // 기준 일자 필터링
+      if (selectedDateFilter === 'today') {
+        if (dateStr && dateStr !== today) return;
+      } else if (selectedDateFilter !== 'all') {
+        if (dateStr && dateStr !== selectedDateFilter) return;
+      }
+
+      const submitter = String(row[2] || '담당자').trim();
+      const eTotal = Number(row[3]) || 0;
+      const eDone = Number(row[4]) || 0;
+      const gTotal = Number(row[5]) || 0;
+      const gDone = Number(row[6]) || 0;
+      const note = row[7] ? String(row[7]).trim() : '-';
+
+      const timeOnly = String(rawTimestamp).includes(' ') ? String(rawTimestamp).split(' ')[1] : String(rawTimestamp);
+
+      newRecords[dept] = {
+        dept,
+        submitter,
+        eTotal,
+        eDone,
+        gTotal,
+        gDone,
+        note,
+        updatedAt: timeOnly || '--:--',
+        rawDate: dateStr || today
+      };
+    });
+
+    departmentRecords = newRecords;
+    localStorage.setItem('eoc_dept_records', JSON.stringify(departmentRecords));
+  }
+
+  // Populate date filter dropdown dynamically based on sheet records
+  function updateDateFilterOptions() {
+    const select = document.getElementById('targetDateSelect');
+    const existingDates = new Set();
+    const today = getTodayYMD();
+
+    allRawRows.forEach(r => {
+      if (!r || !r[0]) return;
+      const d = extractDateString(r[0]);
+      if (d) existingDates.add(d);
+    });
+
+    const sortedDates = Array.from(existingDates).sort().reverse();
+
+    let html = `
+      <option value="today" ${selectedDateFilter === 'today' ? 'selected' : ''}>오늘 (${today})</option>
+      <option value="all" ${selectedDateFilter === 'all' ? 'selected' : ''}>전체 회차 누적</option>
+    `;
+
+    sortedDates.forEach(d => {
+      if (d === today) return; // already in 'today'
+      html += `<option value="${d}" ${selectedDateFilter === d ? 'selected' : ''}>${d} 훈련</option>`;
+    });
+
+    select.innerHTML = html;
+
+    // Banner Text
+    const label = document.getElementById('activeDateLabel');
+    if (selectedDateFilter === 'today') {
+      label.innerText = `오늘 (${today}) 훈련`;
+    } else if (selectedDateFilter === 'all') {
+      label.innerText = `전체 누적 기록`;
+    } else {
+      label.innerText = `${selectedDateFilter} 훈련 기록`;
+    }
+  }
+
   function calculateMetrics() {
     let empTotal = 0, empDone = 0;
     let guestTotal = 0, guestDone = 0;
@@ -454,14 +631,13 @@
     let naDeptsList = [];
 
     STANDARD_DEPARTMENTS.forEach(std => {
-      // 1. 관리자가 N/A 처리한 부서인 경우
       if (naDepartments[std.name]) {
         naDeptsList.push({
           ...std,
           naReason: naDepartments[std.name].reason,
           naTime: naDepartments[std.name].time
         });
-        return; // 통계 모수 및 미보고 목록에서 제외
+        return;
       }
 
       const rec = departmentRecords[std.name];
@@ -509,12 +685,10 @@
   function renderAll() {
     const metrics = calculateMetrics();
 
-    // 1. 점호 취합 지표 표시
     document.getElementById('statOverallRate').innerText = `${metrics.overallRate}%`;
     document.getElementById('statOverallFraction').innerText = `(${metrics.totalEvacuated} / ${metrics.totalPeople}명)`;
     document.getElementById('statOverallBar').style.width = `${metrics.overallRate}%`;
     
-    // N/A가 있을 경우 유효 모수 표시 (예: 9 / 18, 1개 N/A)
     if (metrics.naDeptsList.length > 0) {
       document.getElementById('statReportedRatio').innerText = `${metrics.reportedCount} / ${metrics.activeTotalDepts} (열외 ${metrics.naDeptsList.length})`;
       document.getElementById('statNaSummary').classList.remove('hidden');
@@ -524,7 +698,6 @@
       document.getElementById('statNaSummary').classList.add('hidden');
     }
 
-    // 미확인 인원
     const totalMissingEl = document.getElementById('statTotalMissing');
     totalMissingEl.innerText = `${metrics.totalMissing}명`;
     if (metrics.totalMissing > 0) {
@@ -533,7 +706,6 @@
       totalMissingEl.className = "text-xl font-bold text-emerald-400";
     }
 
-    // 서브 카운터 (임직원 vs 협력사)
     document.getElementById('statEmpDone').innerText = metrics.empDone;
     document.getElementById('statEmpTotal').innerText = metrics.empTotal;
     const empBadge = document.getElementById('statEmpMissingBadge');
@@ -556,25 +728,19 @@
       guestBadge.className = "text-[10px] font-bold text-slate-400";
     }
 
-    // 2. 미보고 부서 알림 영역 갱신
     renderUnreportedSection(metrics.unreportedDepts);
 
-    // 필터 탭 숫자 갱신
     document.getElementById('countPillUnreported').innerText = metrics.unreportedDepts.length;
     document.getElementById('countPillMissing').innerText = metrics.missingPersonDepts.length;
     document.getElementById('countPillComplete').innerText = metrics.completedDepts.length;
     document.getElementById('countPillNa').innerText = metrics.naDeptsList.length;
     document.getElementById('countPillAll').innerText = metrics.totalDepts;
 
-    // 3. 상위부서 그룹 아코디언 카드 렌더링
     renderDeptGroups();
-
     lucide.createIcons();
   }
 
-  // 미보고 부서 칩 표시
   function renderUnreportedSection(unreportedList) {
-    const container = document.getElementById('unreportedListContainer');
     const badgeCount = document.getElementById('unreportedBadgeCount');
     const card = document.getElementById('unreportedCard');
 
@@ -630,14 +796,12 @@
     });
   }
 
-  // 상위부서 단위 그룹 아코디언 렌더링
   function renderDeptGroups() {
     const container = document.getElementById('deptGroupContainer');
     container.innerHTML = '';
 
     const query = searchQuery.trim().toLowerCase();
 
-    // 상위 그룹별로 부서 묶기
     const groupsMap = {};
     STANDARD_DEPARTMENTS.forEach(dept => {
       if (!groupsMap[dept.group]) {
@@ -651,7 +815,6 @@
     Object.keys(groupsMap).forEach(groupName => {
       const depts = groupsMap[groupName];
 
-      // 필터 및 검색 조건에 맞는 부서 추출
       const filteredDepts = depts.filter(deptMeta => {
         const isNa = !!naDepartments[deptMeta.name];
         const rec = departmentRecords[deptMeta.name];
@@ -675,7 +838,6 @@
       if (filteredDepts.length === 0) return;
       totalVisibleGroups++;
 
-      // 그룹 통계 계산
       let groupTotalReported = 0;
       let groupMissingPersons = 0;
       let groupNaCount = 0;
@@ -843,7 +1005,65 @@
     }
   }
 
-  // N/A 모달 열기
+  function openResetModal() {
+    document.getElementById('resetModal').classList.remove('hidden');
+    lucide.createIcons();
+  }
+
+  function executeReset() {
+    const selectedMode = document.querySelector('input[name="resetMode"]:checked')?.value || 'newSession';
+
+    if (selectedMode === 'newSession') {
+      // 1. 현재 시각을 새 세션 기준시점으로 설정 (과거 로그 무시)
+      sessionStartTime = Date.now();
+      drillStartTime = Date.now();
+      localStorage.setItem('eoc_session_start_time', sessionStartTime);
+      localStorage.setItem('eoc_drill_start_time', drillStartTime);
+
+      // 2. N/A 상태 초기화
+      naDepartments = {};
+      localStorage.removeItem('eoc_na_depts');
+
+      // 3. 오늘 훈련으로 강제 전환
+      selectedDateFilter = 'today';
+      localStorage.setItem('eoc_selected_date', 'today');
+
+      // 4. 로컬 레코드 초기화 및 재가공
+      departmentRecords = {};
+      localStorage.removeItem('eoc_dept_records');
+
+      if (allRawRows && allRawRows.length > 0) {
+        processRowsIntoRecords(allRawRows);
+      }
+
+      updateDateFilterOptions();
+      renderAll();
+      closeModal('resetModal');
+      showToast("새 훈련 세션이 시작되었습니다. (이전 로그 자동 배제)");
+
+      if (!isDemoMode && sheetUrl) {
+        fetchFromSheet();
+      }
+    } else {
+      // 로컬 캐시만 비우고 시트 데이터 재파싱
+      sessionStartTime = 0;
+      localStorage.removeItem('eoc_session_start_time');
+      departmentRecords = {};
+      localStorage.removeItem('eoc_dept_records');
+      
+      if (allRawRows && allRawRows.length > 0) {
+        processRowsIntoRecords(allRawRows);
+      }
+      renderAll();
+      closeModal('resetModal');
+      showToast("로컬 화면 캐시를 초기화하고 원본 데이터를 다시 반영했습니다.");
+
+      if (!isDemoMode && sheetUrl) {
+        fetchFromSheet();
+      }
+    }
+  }
+
   function openNaModal(deptName) {
     pendingNaDeptName = deptName;
     document.getElementById('naModalDeptTitle').innerText = `[${deptName.replace(/\[.*?\]\s*/, '')}] N/A(열외) 처리`;
@@ -854,7 +1074,6 @@
     document.getElementById('naModal').classList.remove('hidden');
   }
 
-  // N/A 처리 확정
   function confirmNaDepartment() {
     if (!pendingNaDeptName) return;
 
@@ -877,7 +1096,6 @@
     showToast(`'${pendingNaDeptName.replace(/\[.*?\]\s*/, '')}' N/A 처리 완료`);
   }
 
-  // N/A 해제
   function cancelNaDepartment(deptName) {
     if (naDepartments[deptName]) {
       delete naDepartments[deptName];
@@ -887,14 +1105,12 @@
     }
   }
 
-  // 개별 그룹 토글
   function toggleGroup(groupName) {
     groupExpandedState[groupName] = !groupExpandedState[groupName];
     renderDeptGroups();
     lucide.createIcons();
   }
 
-  // 전체 펼침 / 전체 축소
   function toggleAllGroups(expand) {
     const groups = [...new Set(STANDARD_DEPARTMENTS.map(d => d.group))];
     groups.forEach(g => {
@@ -904,7 +1120,6 @@
     lucide.createIcons();
   }
 
-  // 필터 전환 함수
   function setFilter(type) {
     currentFilter = type;
     const tabs = [
@@ -930,7 +1145,6 @@
     lucide.createIcons();
   }
 
-  // 미보고 부서 독촉 카톡 메시지 원클릭 복사
   function copyNudgeMessage() {
     const metrics = calculateMetrics();
     if (metrics.unreportedDepts.length === 0) {
@@ -945,13 +1159,13 @@
     showToast("독촉 카톡 문구가 복사되었습니다!");
   }
 
-  // 119 인계 브리핑 문구 생성 및 복사
   function openBriefingModal() {
     const metrics = calculateMetrics();
     const elapsedMins = Math.floor((Date.now() - drillStartTime) / 60000);
 
     let text = `[119 소방대 현장 인계 인원점호 브리핑]\n`;
     text += `• 보고 시각: ${new Date().toLocaleTimeString('ko-KR')} (발령 경과 T+${elapsedMins}분)\n`;
+    text += `• 기준 회차: ${selectedDateFilter === 'today' ? '오늘 당일 훈련' : selectedDateFilter}\n`;
     text += `• 총 재실 인원: ${metrics.totalPeople}명 (임직원 ${metrics.empTotal}명 / 협력사·내방객 ${metrics.guestTotal}명)\n`;
     text += `• 옥외 대피 완료: ${metrics.totalEvacuated}명 (${metrics.overallRate}%)\n`;
     text += `• 현재 미확인/잔류: 총 ${metrics.totalMissing}명\n`;
@@ -1004,7 +1218,6 @@
     document.body.removeChild(ta);
   }
 
-  // Google Sheets 실시간 동기화
   async function fetchFromSheet() {
     if (!sheetUrl) return;
 
@@ -1022,39 +1235,22 @@
         isJson = false;
       }
 
-      // 데이터가 아예 없거나 빈 배열인 경우 기존 데이터 유지
       if (!rows || rows.length === 0) return;
 
-      const newRecords = {};
-      // Apps Script JSON인 경우 1행(헤더)이 이미 제외되어 있으므로 0번째부터 순회,
-      // 순수 CSV인 경우 0번째가 헤더이므로 1번째부터 순회
       const startIndex = isJson ? 0 : 1;
-
+      const validRows = [];
       for (let i = startIndex; i < rows.length; i++) {
-        const row = rows[i];
-        if (!row || row.length < 5) continue;
-
-        const timestamp = row[0] ? String(row[0]).split(' ')[1] || row[0] : '--:--';
-        const dept = String(row[1]).trim();
-        const submitter = String(row[2] || '담당자').trim();
-        const eTotal = Number(row[3]) || 0;
-        const eDone = Number(row[4]) || 0;
-        const gTotal = Number(row[5]) || 0;
-        const gDone = Number(row[6]) || 0;
-        const note = row[7] ? String(row[7]).trim() : '-';
-
-        if (!dept) continue;
-
-        // 동일 부서 최신 덮어쓰기
-        newRecords[dept] = { dept, submitter, eTotal, eDone, gTotal, gDone, note, updatedAt: timestamp };
+        if (rows[i] && rows[i].length >= 5) {
+          validRows.push(rows[i]);
+        }
       }
 
-      // 파싱된 레코드가 있을 때만 덮어쓰고 localStorage에 저장 (네트워크 일시 오류 시 기존 데이터 보존)
-      if (Object.keys(newRecords).length > 0) {
-        departmentRecords = newRecords;
-        localStorage.setItem('eoc_dept_records', JSON.stringify(departmentRecords));
-        renderAll();
-      }
+      allRawRows = validRows;
+      localStorage.setItem('eoc_raw_rows', JSON.stringify(allRawRows));
+
+      processRowsIntoRecords(allRawRows);
+      updateDateFilterOptions();
+      renderAll();
     } catch (err) {
       console.error("Sheet polling failed:", err);
     }
@@ -1115,7 +1311,6 @@
   window.onload = function() {
     initTimers();
 
-    // Radio change listener for custom reason
     const radios = document.querySelectorAll('input[name="naReason"]');
     radios.forEach(r => {
       r.addEventListener('change', (e) => {
@@ -1129,11 +1324,22 @@
       });
     });
 
-    // Events
+    document.getElementById('openResetModalBtn').addEventListener('click', openResetModal);
     document.getElementById('openBriefingBtn').addEventListener('click', openBriefingModal);
     document.getElementById('openSettingsBtn').addEventListener('click', () => {
       document.getElementById('sheetUrlInput').value = sheetUrl;
       document.getElementById('settingsModal').classList.remove('hidden');
+    });
+
+    document.getElementById('targetDateSelect').addEventListener('change', (e) => {
+      selectedDateFilter = e.target.value;
+      localStorage.setItem('eoc_selected_date', selectedDateFilter);
+      if (allRawRows && allRawRows.length > 0) {
+        processRowsIntoRecords(allRawRows);
+      }
+      updateDateFilterOptions();
+      renderAll();
+      showToast(`'${e.target.options[e.target.selectedIndex].text}' 기준으로 화면을 전환했습니다.`);
     });
 
     document.getElementById('deptSearchInput').addEventListener('input', (e) => {
@@ -1149,7 +1355,6 @@
         loadMockData();
       } else {
         document.getElementById('demoModeLabel').innerText = "실제 시트 연동";
-        // 기존 캐시가 있다면 유지하면서 실제 시트 즉시 조회
         renderAll();
         if (sheetUrl) restartSync();
         showToast("실제 시트 수신 모드로 전환되었습니다.");
@@ -1159,7 +1364,11 @@
     if (sheetUrl) {
       isDemoMode = false;
       document.getElementById('demoModeLabel').innerText = "실제 시트 연동";
-      renderAll(); // 캐시된 데이터 먼저 즉시 렌더링
+      if (allRawRows.length > 0) {
+        processRowsIntoRecords(allRawRows);
+      }
+      updateDateFilterOptions();
+      renderAll();
       restartSync();
     } else {
       loadMockData();
