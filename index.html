@@ -46,6 +46,15 @@
       background: #334155;
       border-radius: 4px;
     }
+    .pulse-ring {
+      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+      animation: pulsing 1.5s infinite;
+    }
+    @keyframes pulsing {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+      70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
   </style>
 </head>
 <body class="min-h-screen flex flex-col antialiased pb-20 select-none">
@@ -61,7 +70,7 @@
         <div class="min-w-0">
           <div class="flex items-center gap-1.5">
             <h1 class="text-sm font-bold text-white truncate">비상대피 점호 현황판</h1>
-            <span id="syncIndicator" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping flex-shrink-0"></span>
+            <span id="syncIndicator" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping flex-shrink-0" title="실시간 동기화 중"></span>
           </div>
           <p class="text-[11px] text-slate-400 font-mono truncate">
             경과 T+<span id="incidentTimer" class="text-amber-400 font-bold">00:00</span> • <span id="currentTime">--:--:--</span>
@@ -93,7 +102,7 @@
         </button>
 
         <!-- Config Modal Open -->
-        <button id="openSettingsBtn" title="설정" class="p-1.5 rounded-md bg-slate-800 border border-slate-700 text-slate-300">
+        <button id="openSettingsBtn" title="설정 및 연동 가이드" class="p-1.5 rounded-md bg-slate-800 border border-slate-700 text-slate-300">
           <i data-lucide="settings" class="w-4 h-4"></i>
         </button>
       </div>
@@ -167,7 +176,7 @@
       </div>
       <!-- N/A Excluded Summary Note -->
       <div id="statNaSummary" class="hidden mt-2 pt-2 border-t border-slate-800/50 text-[10px] text-slate-400 flex items-center justify-between">
-        <span>관리자 N/A(열외) 처리 부서: <strong id="statNaCount" class="text-slate-300">0</strong>곳</span>
+        <span>관리자 N/A(열외) 처리 부서: <strong id="statNaCount" class="text-slate-300">0</strong>곳 (인원 0명 반영)</span>
         <button onclick="setFilter('na')" class="text-sky-400 hover:underline">목록 보기</button>
       </div>
     </div>
@@ -289,12 +298,12 @@
     </div>
   </div>
 
-  <!-- N/A (열외 처리) 설정 모달 -->
+  <!-- N/A (열외 처리) 설정 모달 with 구글 시트 0명 자동 전송 기능 -->
   <div id="naModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-4 shadow-2xl space-y-3">
+    <div class="bg-slate-900 border border-amber-500/50 rounded-2xl max-w-sm w-full p-4 shadow-2xl space-y-3">
       <div class="flex items-center justify-between pb-2 border-b border-slate-800">
-        <div class="flex items-center gap-1.5 text-slate-200 font-bold text-xs">
-          <i data-lucide="ban" class="w-4 h-4 text-amber-400"></i>
+        <div class="flex items-center gap-1.5 text-amber-400 font-bold text-xs">
+          <i data-lucide="ban" class="w-4 h-4"></i>
           <span id="naModalDeptTitle">부서 N/A(열외) 처리</span>
         </div>
         <button onclick="closeModal('naModal')" class="text-slate-400 hover:text-white p-1">
@@ -302,33 +311,43 @@
         </button>
       </div>
 
-      <p class="text-[11px] text-slate-400">
-        선택한 부서를 점호 대상에서 열외(N/A) 처리합니다. 미보고 독촉 명단에서 제외됩니다.
+      <p class="text-[11px] text-slate-300 leading-snug">
+        해당 부서를 열외 처리합니다. 구글 시트에 <strong class="text-amber-400">인원 0명(재실 0 / 대피 0)</strong> 보고 행을 자동 등록하여 원본 데이터와 일치시킵니다.
       </p>
 
       <div class="space-y-2 text-xs">
         <label class="block font-semibold text-slate-300 text-[11px]">열외 사유 선택</label>
         <div class="space-y-1.5">
           <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700 cursor-pointer text-slate-200 text-xs">
-            <input type="radio" name="naReason" value="당일 전원 재택/외근/휴가" checked class="accent-amber-500">
+            <input type="radio" name="naReason" value="당일 전원 재택/외근/휴가 (사업장 재실 0명)" checked class="accent-amber-500">
             <span>당일 전원 재택/외근/휴가 (사업장 재실 0명)</span>
           </label>
           <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700 cursor-pointer text-slate-200 text-xs">
-            <input type="radio" name="naReason" value="유선 통화 확인 완료(대피 완료)" class="accent-amber-500">
-            <span>유선 통화 확인 완료 (폼 미제출, 대피 확인됨)</span>
+            <input type="radio" name="naReason" value="유선 통화 확인 완료 (대피 완료, 폼 미제출)" class="accent-amber-500">
+            <span>유선 통화 확인 완료 (대피 완료, 폼 미제출)</span>
           </label>
           <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700 cursor-pointer text-slate-200 text-xs">
             <input type="radio" name="naReason" value="custom" id="naReasonCustomRadio" class="accent-amber-500">
             <span>직접 입력</span>
           </label>
         </div>
-        <input type="text" id="naCustomReasonInput" placeholder="기타 사유를 입력하세요 (예: 본사 파견)" 
+        <input type="text" id="naCustomReasonInput" placeholder="기타 사유를 입력하세요 (예: 본사 파견 근무)" 
           class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-amber-500 hidden">
       </div>
 
+      <!-- Sync to Sheet Option -->
+      <div class="pt-2 border-t border-slate-800">
+        <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+          <input type="checkbox" id="syncNaToSheetCheck" checked class="w-4 h-4 rounded accent-sky-500">
+          <span>구글 시트에 0명 보고 행 자동 전송</span>
+        </label>
+        <p class="text-[10px] text-slate-500 mt-1 pl-6">체크 시 구글 시트에 [0명 / 0명 / 열외 사유] 행이 즉시 추가됩니다.</p>
+      </div>
+
       <div class="flex justify-end gap-2 pt-2">
-        <button onclick="confirmNaDepartment()" class="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition active:scale-95">
-          N/A 처리 확정
+        <button id="confirmNaBtn" onclick="confirmNaDepartment()" class="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition active:scale-95 flex items-center gap-1.5">
+          <span id="confirmNaBtnSpinner" class="hidden w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+          <span id="confirmNaBtnLabel">N/A 및 0명 보고 확정</span>
         </button>
         <button onclick="closeModal('naModal')" class="px-3.5 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-medium">
           취소
@@ -367,11 +386,11 @@
 
   <!-- Settings Modal -->
   <div id="settingsModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-4 shadow-2xl space-y-3">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-4 shadow-2xl space-y-3 max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between pb-2 border-b border-slate-800">
         <div class="flex items-center gap-1.5 text-sky-400 font-bold text-sm">
           <i data-lucide="sliders" class="w-4 h-4"></i>
-          <span>관제 연동 설정</span>
+          <span>관제 연동 설정 &amp; 구글 시트 가이드</span>
         </div>
         <button onclick="closeModal('settingsModal')" class="text-slate-400 hover:text-white p-1">
           <i data-lucide="x" class="w-4 h-4"></i>
@@ -379,9 +398,10 @@
       </div>
       <div class="space-y-3 text-xs">
         <div>
-          <label class="block font-semibold text-slate-300 mb-1">구글 시트 웹앱 URL 또는 CSV URL</label>
-          <input type="text" id="sheetUrlInput" placeholder="https://script.google.com/... 또는 구글시트 CSV 링크" 
+          <label class="block font-semibold text-slate-300 mb-1">구글 시트 웹앱 URL (Google Apps Script Web App)</label>
+          <input type="text" id="sheetUrlInput" placeholder="https://script.google.com/macros/s/.../exec" 
             class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-slate-200 text-xs focus:outline-none focus:border-sky-500 font-mono">
+          <p class="text-[10px] text-slate-400 mt-1">※ N/A 처리 시 0명 데이터 자동 기입(POST)을 지원하려면 웹앱에 doPost 핸들러가 구현되어 있어야 합니다.</p>
         </div>
         <div>
           <label class="block font-semibold text-slate-300 mb-1">자동 동기화 주기</label>
@@ -390,6 +410,40 @@
             <option value="5000" selected>5초마다 갱신 (기본)</option>
             <option value="10000">10초마다 갱신</option>
           </select>
+        </div>
+
+        <!-- Apps Script Code Helper Box -->
+        <div class="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold text-amber-300">Google Apps Script 연동 코드 예시 (doGet + doPost)</span>
+            <button onclick="copyAppsScriptSnippet()" class="text-[10px] px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700">스크립트 복사</button>
+          </div>
+          <pre id="appsScriptSnippet" class="text-[10px] text-slate-400 font-mono overflow-x-auto p-2 bg-black/40 rounded border border-slate-900 leading-tight">function doGet(e) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data = sheet.getDataRange().getValues();
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var params = e.parameter;
+  if (!params.dept) {
+    try { params = JSON.parse(e.postData.contents); } catch(err){}
+  }
+  var timestamp = params.timestamp || new Date();
+  sheet.appendRow([
+    timestamp,
+    params.dept,
+    params.submitter || "관리자(NA)",
+    Number(params.eTotal) || 0,
+    Number(params.eDone) || 0,
+    Number(params.gTotal) || 0,
+    Number(params.gDone) || 0,
+    params.note || "[N/A 열외]"
+  ]);
+  return ContentService.createTextOutput("OK").setMimeType(ContentService.MimeType.TEXT);
+}</pre>
         </div>
       </div>
       <div class="flex justify-end gap-2 pt-2">
@@ -412,7 +466,7 @@
   <script>
   const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxSOyEmlT9UBfacs7QR0mvMoTKjNuXiXUMz_lyrCqTtxL_m2lX-7AB1zyG0CXrs5XF4cQ/exec";
 
-  // 부서 목록 재정의 (조직 및 포함 직책/그룹 반영)
+  // 부서 목록 정의
   const STANDARD_DEPARTMENTS = [
     // [SYSTEM본부]
     { id: "SYS_1", group: "SYSTEM본부", name: "SEC영업팀 (SYSTEM본부장)" },
@@ -496,16 +550,13 @@
     return `${yyyy}-${mm}-${dd}`;
   }
 
-  // Parse raw date string into YYYY-MM-DD
   function extractDateString(timestampVal) {
     if (!timestampVal) return '';
     const str = String(timestampVal).trim();
-    // Case 1: ISO or '2026-10-19 14:00:00'
     const dashMatch = str.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
     if (dashMatch) {
       return `${dashMatch[1]}-${dashMatch[2].padStart(2, '0')}-${dashMatch[3].padStart(2, '0')}`;
     }
-    // Case 2: Date object string or fallback
     const parsed = new Date(str);
     if (!isNaN(parsed.getTime())) {
       const y = parsed.getFullYear();
@@ -537,7 +588,7 @@
     const today = getTodayYMD();
     const newRecords = {};
 
-    rows.forEach((row, idx) => {
+    rows.forEach((row) => {
       if (!row || row.length < 5) return;
       const rawTimestamp = row[0];
       const dept = String(row[1] || '').trim();
@@ -578,13 +629,23 @@
         updatedAt: timeOnly || '--:--',
         rawDate: dateStr || today
       };
+
+      // 만약 시트 행에 N/A 표기가 있는 경우 naDepartments에도 자동 동기화
+      if (submitter.includes('N/A') || note.includes('[N/A') || (eTotal === 0 && eDone === 0 && gTotal === 0 && gDone === 0 && note.includes('열외'))) {
+        if (!naDepartments[dept]) {
+          naDepartments[dept] = {
+            reason: note.replace('[N/A 열외]', '').trim() || '구글 시트 N/A 반영',
+            time: timeOnly
+          };
+        }
+      }
     });
 
     departmentRecords = newRecords;
     localStorage.setItem('eoc_dept_records', JSON.stringify(departmentRecords));
+    localStorage.setItem('eoc_na_depts', JSON.stringify(naDepartments));
   }
 
-  // Populate date filter dropdown dynamically based on sheet records
   function updateDateFilterOptions() {
     const select = document.getElementById('targetDateSelect');
     const existingDates = new Set();
@@ -604,13 +665,12 @@
     `;
 
     sortedDates.forEach(d => {
-      if (d === today) return; // already in 'today'
+      if (d === today) return;
       html += `<option value="${d}" ${selectedDateFilter === d ? 'selected' : ''}>${d} 훈련</option>`;
     });
 
     select.innerHTML = html;
 
-    // Banner Text
     const label = document.getElementById('activeDateLabel');
     if (selectedDateFilter === 'today') {
       label.innerText = `오늘 (${today}) 훈련`;
@@ -664,7 +724,7 @@
     const activeTotalDepts = STANDARD_DEPARTMENTS.length - naDeptsList.length;
     const totalPeople = empTotal + guestTotal;
     const totalEvacuated = empDone + guestDone;
-    const overallRate = totalPeople > 0 ? Math.round((totalEvacuated / totalPeople) * 100) : 0;
+    const overallRate = totalPeople > 0 ? Math.round((totalEvacuated / totalPeople) * 100) : (activeTotalDepts > 0 && reportedCount === activeTotalDepts ? 100 : 0);
     const totalMissing = (empTotal - empDone) + (guestTotal - guestDone);
 
     return {
@@ -774,7 +834,7 @@
       </div>
 
       <p class="text-[11px] text-amber-200/80 leading-snug">
-        아래 부서는 아직 집결 현황을 제출하지 않았습니다. 단체채팅방을 통해 점호를 재촉하거나, 현장 확인 후 <strong>[N/A]</strong> 버튼으로 열외 처리할 수 있습니다.
+        아래 부서는 아직 집결 현황을 제출하지 않았습니다. 단체채팅방을 통해 점호를 재촉하거나, 현장 확인 후 <strong>[N/A]</strong> 버튼으로 시트에 0명 보고 및 열외 처리할 수 있습니다.
       </p>
 
       <div id="unreportedListContainer" class="flex flex-wrap gap-1.5 pt-1"></div>
@@ -788,8 +848,8 @@
       
       chip.innerHTML = `
         <span>${cleanName}</span>
-        <button onclick="openNaModal('${dept.name}')" title="열외/N/A 처리" class="ml-1 text-[10px] px-1 py-0.2 rounded bg-amber-600/40 hover:bg-amber-600/70 text-amber-200 border border-amber-400/40">
-          N/A
+        <button onclick="openNaModal('${dept.name}')" title="열외 및 시트 0명 보고 처리" class="ml-1 text-[10px] px-1 py-0.2 rounded bg-amber-600/40 hover:bg-amber-600/70 text-amber-200 border border-amber-400/40">
+          N/A(0명)
         </button>
       `;
       newContainer.appendChild(chip);
@@ -914,7 +974,7 @@
             borderClass = "border-slate-700/60 bg-slate-900/60 opacity-80";
             badgeHtml = `
               <div class="flex items-center gap-1.5">
-                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">N/A (열외)</span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-amber-300 border border-slate-700">N/A (0명 보고)</span>
                 <button onclick="cancelNaDepartment('${deptMeta.name}')" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200">
                   해제
                 </button>
@@ -924,7 +984,7 @@
             badgeHtml = `
               <div class="flex items-center gap-1.5">
                 <button onclick="openNaModal('${deptMeta.name}')" class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30">
-                  N/A 처리
+                  N/A(0명)
                 </button>
                 <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">미보고</span>
               </div>`;
@@ -940,7 +1000,7 @@
 
           let statusDetailText = '';
           if (isNa) {
-            statusDetailText = `<span class="text-amber-300/90 font-medium">사유: ${naDepartments[deptMeta.name].reason}</span> • 처리: ${naDepartments[deptMeta.name].time}`;
+            statusDetailText = `<span class="text-amber-300/90 font-medium">사유: ${naDepartments[deptMeta.name].reason}</span> • 접수: ${naDepartments[deptMeta.name].time}`;
           } else if (isReported) {
             statusDetailText = `<span>보고자: <strong class="text-slate-200">${rec.submitter}</strong></span> • 접수: ${rec.updatedAt}`;
           } else {
@@ -966,22 +1026,22 @@
             <div class="grid grid-cols-2 gap-1.5 pt-1 text-[11px] font-mono">
               <div class="bg-black/40 p-1.5 rounded-lg border border-slate-800/80 flex items-center justify-between">
                 <span class="text-slate-400 text-[10px]">임직원</span>
-                ${isNa ? '<span class="text-slate-500 font-sans text-[10px]">열외 (0명)</span>' : (isReported 
+                ${isNa ? '<span class="text-amber-400/90 font-semibold text-[10px]">0 / 0명 (열외)</span>' : (isReported 
                   ? `<span class="${eMiss > 0 ? 'text-red-400 font-bold' : 'text-slate-200'}">${eDone} / ${eTotal}명</span>`
                   : `<span class="text-slate-500 font-sans text-[10px]">미제출</span>`)}
               </div>
               <div class="bg-black/40 p-1.5 rounded-lg border border-slate-800/80 flex items-center justify-between">
                 <span class="text-slate-400 text-[10px]">협력/내방</span>
-                ${isNa ? '<span class="text-slate-500 font-sans text-[10px]">열외 (0명)</span>' : (isReported 
+                ${isNa ? '<span class="text-amber-400/90 font-semibold text-[10px]">0 / 0명 (열외)</span>' : (isReported 
                   ? `<span class="${gMiss > 0 ? 'text-amber-400 font-bold' : 'text-slate-200'}">${gDone} / ${gTotal}명</span>`
                   : `<span class="text-slate-500 font-sans text-[10px]">미제출</span>`)}
               </div>
             </div>
 
             <!-- Remark Note -->
-            ${isReported && rec.note && rec.note !== '-' && rec.note !== '특이사항 없음' ? `
+            ${(isReported || isNa) && (rec?.note || naDepartments[deptMeta.name]?.reason) ? `
               <div class="text-[11px] p-2 rounded-lg bg-black/50 border border-slate-800 text-slate-300">
-                <span class="text-amber-400 font-semibold mr-1">특이사항:</span>${rec.note}
+                <span class="text-amber-400 font-semibold mr-1">특이사항:</span>${isNa ? `[N/A 열외] ${naDepartments[deptMeta.name].reason}` : rec.note}
               </div>
             ` : ''}
           `;
@@ -1014,21 +1074,17 @@
     const selectedMode = document.querySelector('input[name="resetMode"]:checked')?.value || 'newSession';
 
     if (selectedMode === 'newSession') {
-      // 1. 현재 시각을 새 세션 기준시점으로 설정 (과거 로그 무시)
       sessionStartTime = Date.now();
       drillStartTime = Date.now();
       localStorage.setItem('eoc_session_start_time', sessionStartTime);
       localStorage.setItem('eoc_drill_start_time', drillStartTime);
 
-      // 2. N/A 상태 초기화
       naDepartments = {};
       localStorage.removeItem('eoc_na_depts');
 
-      // 3. 오늘 훈련으로 강제 전환
       selectedDateFilter = 'today';
       localStorage.setItem('eoc_selected_date', 'today');
 
-      // 4. 로컬 레코드 초기화 및 재가공
       departmentRecords = {};
       localStorage.removeItem('eoc_dept_records');
 
@@ -1045,7 +1101,6 @@
         fetchFromSheet();
       }
     } else {
-      // 로컬 캐시만 비우고 시트 데이터 재파싱
       sessionStartTime = 0;
       localStorage.removeItem('eoc_session_start_time');
       departmentRecords = {};
@@ -1066,15 +1121,16 @@
 
   function openNaModal(deptName) {
     pendingNaDeptName = deptName;
-    document.getElementById('naModalDeptTitle').innerText = `[${deptName.replace(/\[.*?\]\s*/, '')}] N/A(열외) 처리`;
+    document.getElementById('naModalDeptTitle').innerText = `[${deptName.replace(/\[.*?\]\s*/, '')}] N/A(0명 보고) 처리`;
     document.getElementById('naCustomReasonInput').classList.add('hidden');
     document.getElementById('naCustomReasonInput').value = '';
-    const defaultRadio = document.querySelector('input[name="naReason"][value="당일 전원 재택/외근/휴가"]');
+    const defaultRadio = document.querySelector('input[name="naReason"][value="당일 전원 재택/외근/휴가 (사업장 재실 0명)"]');
     if (defaultRadio) defaultRadio.checked = true;
+    document.getElementById('syncNaToSheetCheck').checked = true;
     document.getElementById('naModal').classList.remove('hidden');
   }
 
-  function confirmNaDepartment() {
+  async function confirmNaDepartment() {
     if (!pendingNaDeptName) return;
 
     const selectedRadio = document.querySelector('input[name="naReason"]:checked');
@@ -1084,22 +1140,99 @@
       reason = customVal || '기타 관리자 확인 사유';
     }
 
-    const nowTime = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const now = new Date();
+    const todayYmd = getTodayYMD();
+    const timeOnly = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const fullTimestampStr = `${todayYmd} ${timeOnly}`;
+
+    const syncToSheet = document.getElementById('syncNaToSheetCheck').checked;
+    const confirmBtn = document.getElementById('confirmNaBtn');
+    const spinner = document.getElementById('confirmNaBtnSpinner');
+    const btnLabel = document.getElementById('confirmNaBtnLabel');
+
+    if (syncToSheet && sheetUrl && !isDemoMode) {
+      spinner.classList.remove('hidden');
+      btnLabel.innerText = "시트 전송 중...";
+      confirmBtn.disabled = true;
+
+      try {
+        const payload = {
+          timestamp: fullTimestampStr,
+          dept: pendingNaDeptName,
+          submitter: "관리자(N/A)",
+          eTotal: 0,
+          eDone: 0,
+          gTotal: 0,
+          gDone: 0,
+          note: `[N/A 열외] ${reason}`
+        };
+
+        // Google Apps Script Web App POST 호출 (CORS 회피용 no-cors 지원)
+        await fetch(sheetUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: new URLSearchParams(payload).toString()
+        });
+
+      } catch (postErr) {
+        console.warn("구글 시트 POST 전송 실패(로컬 반영 유지):", postErr);
+      } finally {
+        spinner.classList.add('hidden');
+        btnLabel.innerText = "N/A 및 0명 보고 확정";
+        confirmBtn.disabled = false;
+      }
+    }
+
+    // 1. N/A 상태 로컬 등록
     naDepartments[pendingNaDeptName] = {
       reason: reason,
-      time: nowTime
+      time: timeOnly
     };
-
     localStorage.setItem('eoc_na_depts', JSON.stringify(naDepartments));
+
+    // 2. 인원 0명 보고 데이터로 로컬 레코드 동기화
+    departmentRecords[pendingNaDeptName] = {
+      dept: pendingNaDeptName,
+      submitter: "관리자(N/A)",
+      eTotal: 0,
+      eDone: 0,
+      gTotal: 0,
+      gDone: 0,
+      note: `[N/A 열외] ${reason}`,
+      updatedAt: timeOnly,
+      rawDate: todayYmd
+    };
+    localStorage.setItem('eoc_dept_records', JSON.stringify(departmentRecords));
+
+    // 3. allRawRows 캐시에도 0명 보고 행 추가 (새로고침 시 유지)
+    allRawRows.push([
+      fullTimestampStr,
+      pendingNaDeptName,
+      "관리자(N/A)",
+      0, 0, 0, 0,
+      `[N/A 열외] ${reason}`
+    ]);
+    localStorage.setItem('eoc_raw_rows', JSON.stringify(allRawRows));
+
     closeModal('naModal');
     renderAll();
-    showToast(`'${pendingNaDeptName.replace(/\[.*?\]\s*/, '')}' N/A 처리 완료`);
+    showToast(`'${pendingNaDeptName.replace(/\[.*?\]\s*/, '')}' N/A (인원 0명) 보고가 시트 및 현황판에 반영되었습니다.`);
   }
 
   function cancelNaDepartment(deptName) {
     if (naDepartments[deptName]) {
       delete naDepartments[deptName];
       localStorage.setItem('eoc_na_depts', JSON.stringify(naDepartments));
+
+      // 0명 레코드도 제거하여 미보고 상태로 원복
+      if (departmentRecords[deptName] && departmentRecords[deptName].submitter === "관리자(N/A)") {
+        delete departmentRecords[deptName];
+        localStorage.setItem('eoc_dept_records', JSON.stringify(departmentRecords));
+      }
+
       renderAll();
       showToast(`'${deptName.replace(/\[.*?\]\s*/, '')}' N/A 처리가 해제되었습니다.`);
     }
@@ -1171,7 +1304,7 @@
     text += `• 현재 미확인/잔류: 총 ${metrics.totalMissing}명\n`;
     text += `• 점호 보고 완료율: ${metrics.reportedCount} / ${metrics.activeTotalDepts}개 부서`;
     if (metrics.naDeptsList.length > 0) {
-      text += ` (열외/N/A ${metrics.naDeptsList.length}곳 제외)`;
+      text += ` (열외/N/A 0명 보고 ${metrics.naDeptsList.length}곳 제외)`;
     }
     text += `\n\n`;
 
@@ -1189,7 +1322,7 @@
     }
 
     if (metrics.naDeptsList.length > 0) {
-      text += `\n※ N/A(열외) 확인 부서 (${metrics.naDeptsList.length}곳):\n`;
+      text += `\n※ N/A(열외) 확인 부서 (${metrics.naDeptsList.length}곳, 0명 반영):\n`;
       metrics.naDeptsList.forEach(d => {
         text += `  • ${d.name.replace(/\[.*?\]\s*/, '')}: ${d.naReason}\n`;
       });
@@ -1207,6 +1340,12 @@
     label.innerText = "복사 완료!";
     setTimeout(() => { label.innerText = "브리핑 복사"; }, 2000);
     showToast("119 브리핑 문구가 복사되었습니다.");
+  }
+
+  function copyAppsScriptSnippet() {
+    const code = document.getElementById('appsScriptSnippet').innerText;
+    copyToClipboard(code);
+    showToast("Google Apps Script 연동 코드가 복사되었습니다.");
   }
 
   function copyToClipboard(str) {
@@ -1312,7 +1451,7 @@
     initTimers();
 
     const radios = document.querySelectorAll('input[name="naReason"]');
-    radios.forEach(r => {
+    radiors = radios.forEach(r => {
       r.addEventListener('change', (e) => {
         const customInput = document.getElementById('naCustomReasonInput');
         if (e.target.value === 'custom') {
