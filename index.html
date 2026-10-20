@@ -58,7 +58,6 @@
 </head>
 <body class="min-h-screen flex flex-col antialiased pb-20 select-none">
 
-  <!-- Mobile Sticky Top Bar -->
   <header class="sticky top-0 z-40 bg-[#0d1526]/95 backdrop-blur border-b border-slate-800 px-3.5 py-2.5">
     <div class="max-w-2xl mx-auto flex items-center justify-between gap-2">
       <!-- Title & Live Status -->
@@ -79,7 +78,7 @@
 
       <!-- Quick Action Controls -->
       <div class="flex items-center gap-1.5 flex-shrink-0">
-        <!-- Date Selector (과거 훈련 회차 리뷰 및 당일 훈련 분리) -->
+        <!-- Date Selector -->
         <select id="targetDateSelect" class="bg-slate-800 border border-slate-700 text-sky-300 text-[11px] font-semibold rounded-lg px-2 py-1 focus:outline-none focus:border-sky-500">
           <option value="today">오늘 훈련</option>
           <option value="all">전체 누적</option>
@@ -119,7 +118,7 @@
       <button onclick="openResetModal()" class="text-[11px] text-red-400 hover:text-red-300 underline font-medium">새 훈련 시작(초기화)</button>
     </div>
 
-    <!-- 1. Headcount Rollup Scorecard (핵심 취합 집계) -->
+    <!-- 1. Headcount Rollup Scorecard -->
     <div class="bg-gradient-to-br from-slate-900 to-[#111a2e] border border-slate-800 rounded-2xl p-3.5 shadow-lg">
       <div class="flex items-center justify-between pb-2 border-b border-slate-800/80">
         <span class="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
@@ -250,7 +249,7 @@
 
   </main>
 
-  <!-- 4. 관리자 수기 점호 입력/수정 모달 (Manual Roll Call Modal) -->
+  <!-- 4. 관리자 수기 점호 입력/수정 모달 -->
   <div id="manualEntryModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
     <div class="bg-slate-900 border border-sky-500/40 rounded-2xl max-w-sm w-full p-4 shadow-2xl space-y-3.5 max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between pb-2 border-b border-slate-800">
@@ -406,7 +405,7 @@
     </div>
   </div>
 
-  <!-- N/A (열외 처리) 설정 모달 with 구글 시트 0명 자동 전송 기능 -->
+  <!-- N/A (열외 처리) 설정 모달 -->
   <div id="naModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
     <div class="bg-slate-900 border border-amber-500/50 rounded-2xl max-w-sm w-full p-4 shadow-2xl space-y-3">
       <div class="flex items-center justify-between pb-2 border-b border-slate-800">
@@ -544,10 +543,10 @@ function doPost(e) {
     timestamp,
     params.dept,
     params.submitter || "관리자 대리입력",
-    Number(params.eTotal) || 0,
-    Number(params.eDone) || 0,
-    Number(params.gTotal) || 0,
-    Number(params.gDone) || 0,
+    Number(params.eTotal || params.empTotal) || 0,
+    Number(params.eDone || params.empDone) || 0,
+    Number(params.gTotal || params.guestTotal) || 0,
+    Number(params.gDone || params.guestDone) || 0,
     params.note || "-"
   ]);
   return ContentService.createTextOutput("OK").setMimeType(ContentService.MimeType.TEXT);
@@ -658,18 +657,15 @@ function doPost(e) {
     return `${yyyy}-${mm}-${dd}`;
   }
 
-  // Cross-browser safe timestamp parser (supports YYYY-MM-DD, YYYY. M. D., ISO, etc.)
   function parseTimestampToMs(timestampVal) {
     if (!timestampVal) return 0;
     if (timestampVal instanceof Date) return timestampVal.getTime();
     
     const str = String(timestampVal).trim();
-    // Case 1: Standard YYYY-MM-DD HH:mm:ss
     const isoLike = str.replace(/\./g, '-').replace(/\s+/g, ' ');
     const directParsed = new Date(isoLike).getTime();
     if (!isNaN(directParsed)) return directParsed;
 
-    // Case 2: Regex extraction
     const match = str.match(/(\d{4})[-/.]\s*(\d{1,2})[-/.]\s*(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
     if (match) {
       const y = parseInt(match[1], 10);
@@ -1316,88 +1312,105 @@ function doPost(e) {
     }
   };
 
-  window.handleManualSubmit = async function(e) {
-    if (e) e.preventDefault();
-    const deptName = document.getElementById('manualDeptHidden').value;
-    if (!deptName) return;
+  // [수정/추가] NA 모달을 띄우는 함수 정의
+  window.openNaModal = function(deptName) {
+    pendingNaDeptName = deptName;
+    const titleEl = document.getElementById('naModalDeptTitle');
+    if (titleEl) {
+      titleEl.innerText = `[${deptName.replace(/\[.*?\]\s*/, '')}] N/A(열외) 처리`;
+    }
 
-    const submitter = document.getElementById('manualSubmitterInput').value.trim() || "관리자 대리입력";
-    const eTotal = Math.max(0, Number(document.getElementById('manualEmpTotal').value) || 0);
-    const eDone = Math.max(0, Number(document.getElementById('manualEmpDone').value) || 0);
-    const gTotal = Math.max(0, Number(document.getElementById('manualGuestTotal').value) || 0);
-    const gDone = Math.max(0, Number(document.getElementById('manualGuestDone').value) || 0);
-    const note = document.getElementById('manualNoteInput').value.trim() || "-";
+    // 기본 라디오 선택 초기화
+    const firstRadio = document.querySelector('input[name="naReason"][value="당일 전원 재택/외근/휴가 (사업장 재실 0명)"]');
+    if (firstRadio) firstRadio.checked = true;
 
-    if (eDone > eTotal) {
-      showToast("임직원 대피 인원이 총 재실 인원을 초과할 수 없습니다.");
+    const customInput = document.getElementById('naCustomReasonInput');
+    if (customInput) {
+      customInput.classList.add('hidden');
+      customInput.value = '';
+    }
+
+    document.getElementById('syncNaToSheetCheck').checked = true;
+    document.getElementById('naModal').classList.remove('hidden');
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  };
+
+  window.confirmNaDepartment = async function() {
+    if (!pendingNaDeptName) {
+      showToast("열외 처리할 부서가 지정되지 않았습니다.");
       return;
     }
-    if (gDone > gTotal) {
-      showToast("내방객 대피 인원이 총 재실 인원을 초과할 수 없습니다.");
-      return;
+
+    const selectedRadio = document.querySelector('input[name="naReason"]:checked');
+    let reason = selectedRadio ? selectedRadio.value : '당일 전원 재택/외근/휴가 (사업장 재실 0명)';
+    if (reason === 'custom') {
+      const customVal = document.getElementById('naCustomReasonInput').value.trim();
+      reason = customVal || '기타 관리자 확인 사유';
     }
 
     const now = new Date();
     const todayYmd = getTodayYMD();
-    const timeOnly = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const timeOnly = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     const fullTimestampStr = `${todayYmd} ${timeOnly}`;
 
-    const syncToSheet = document.getElementById('syncManualToSheetCheck').checked;
-    const submitBtn = document.getElementById('submitManualBtn');
-    const spinner = document.getElementById('submitManualSpinner');
-    const label = document.getElementById('submitManualBtnLabel');
+    const syncToSheet = document.getElementById('syncNaToSheetCheck').checked;
+    const confirmBtn = document.getElementById('confirmNaBtn');
+    const spinner = document.getElementById('confirmNaBtnSpinner');
+    const btnLabel = document.getElementById('confirmNaBtnLabel');
 
     if (syncToSheet && sheetUrl && !isDemoMode) {
       if (spinner) spinner.classList.remove('hidden');
-      if (label) label.innerText = "시트 전송 중...";
-      if (submitBtn) submitBtn.disabled = true;
+      if (btnLabel) btnLabel.innerText = "시트 전송 중...";
+      if (confirmBtn) confirmBtn.disabled = true;
 
       try {
         const payload = {
           timestamp: fullTimestampStr,
-          dept: deptName,
-          submitter: submitter,
-          empTotal: eTotal,
-          empDone: eDone,
-          guestTotal: gTotal,
-          guestDone: gDone,
-          eTotal: eTotal,
-          eDone: eDone,
-          gTotal: gTotal,
-          gDone: gDone,
-          note: note
+          dept: pendingNaDeptName,
+          submitter: "관리자(N/A)",
+          empTotal: 0,
+          empDone: 0,
+          guestTotal: 0,
+          guestDone: 0,
+          eTotal: 0,
+          eDone: 0,
+          gTotal: 0,
+          gDone: 0,
+          note: `[N/A 열외] ${reason}`
         };
 
         await fetch(sheetUrl, {
           method: 'POST',
           mode: 'no-cors',
           headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
+            'Content-Type': 'text/plain;charset=utf-8'
           },
-          body: new URLSearchParams(payload).toString()
+          body: JSON.stringify(payload)
         });
-      } catch (err) {
-        console.warn("구글 시트 POST 전송 실패(로컬 유지):", err);
+      } catch (postErr) {
+        console.warn("구글 시트 POST 전송 실패(로컬 반영 유지):", postErr);
       } finally {
         if (spinner) spinner.classList.add('hidden');
-        if (label) label.innerText = "점호 입력 완료";
-        if (submitBtn) submitBtn.disabled = false;
+        if (btnLabel) btnLabel.innerText = "N/A 및 0명 보고 확정";
+        if (confirmBtn) confirmBtn.disabled = false;
       }
     }
 
-    if (naDepartments[deptName]) {
-      delete naDepartments[deptName];
-      localStorage.setItem('eoc_na_depts', JSON.stringify(naDepartments));
-    }
+    // 로컬 상태 N/A 등록
+    naDepartments[pendingNaDeptName] = {
+      reason: reason,
+      time: timeOnly
+    };
+    localStorage.setItem('eoc_na_depts', JSON.stringify(naDepartments));
 
-    departmentRecords[deptName] = {
-      dept: deptName,
-      submitter: submitter,
-      eTotal: eTotal,
-      eDone: eDone,
-      gTotal: gTotal,
-      gDone: gDone,
-      note: note,
+    departmentRecords[pendingNaDeptName] = {
+      dept: pendingNaDeptName,
+      submitter: "관리자(N/A)",
+      eTotal: 0,
+      eDone: 0,
+      gTotal: 0,
+      gDone: 0,
+      note: `[N/A 열외] ${reason}`,
       updatedAt: timeOnly,
       rawDate: todayYmd
     };
@@ -1405,16 +1418,34 @@ function doPost(e) {
 
     allRawRows.push([
       fullTimestampStr,
-      deptName,
-      submitter,
-      eTotal, eDone, gTotal, gDone,
-      note
+      pendingNaDeptName,
+      "관리자(N/A)",
+      0, 0, 0, 0,
+      `[N/A 열외] ${reason}`
     ]);
     localStorage.setItem('eoc_raw_rows', JSON.stringify(allRawRows));
 
-    closeModal('manualEntryModal');
+    const processedDept = pendingNaDeptName;
+    pendingNaDeptName = null;
+
+    closeModal('naModal');
     renderAll();
-    showToast(`'${deptName.replace(/\[.*?\]\s*/, '')}' 점호가 성공적으로 기록되었습니다.`);
+    showToast(`'${processedDept.replace(/\[.*?\]\s*/, '')}' N/A (인원 0명) 보고가 현황판에 반영되었습니다.`);
+  };
+
+  window.cancelNaDepartment = function(deptName) {
+    if (naDepartments[deptName]) {
+      delete naDepartments[deptName];
+      localStorage.setItem('eoc_na_depts', JSON.stringify(naDepartments));
+
+      if (departmentRecords[deptName] && departmentRecords[deptName].submitter === "관리자(N/A)") {
+        delete departmentRecords[deptName];
+        localStorage.setItem('eoc_dept_records', JSON.stringify(departmentRecords));
+      }
+
+      renderAll();
+      showToast(`'${deptName.replace(/\[.*?\]\s*/, '')}' N/A 처리가 해제되었습니다.`);
+    }
   };
 
   window.openResetModal = function() {
@@ -1465,7 +1496,6 @@ function doPost(e) {
             note: '새 비상대피 훈련 세션 시작 (이전 점호 기록 분리선)'
           };
 
-          // [개선] Google Apps Script 웹앱이 가장 안정적으로 수신할 수 있도록 text/plain 본문 전송
           await fetch(sheetUrl, {
             method: 'POST',
             mode: 'no-cors',
@@ -1474,7 +1504,6 @@ function doPost(e) {
             },
             body: JSON.stringify(payload)
           });
-          console.log("[EOC] 초기화 마커 전송 완료:", payload);
         } catch (err) {
           console.warn("[EOC] 구글 시트 초기화 마커 기록 실패(로컬 세션만 시작):", err);
         } finally {
@@ -1501,9 +1530,8 @@ function doPost(e) {
       updateDateFilterOptions();
       renderAll();
       closeModal('resetModal');
-      showToast("새 훈련 세션이 시작되었으며, 구글 시트에 초기화 기록이 남았습니다.");
+      showToast("새 훈련 세션이 시작되었습니다.");
 
-      // 시트와 즉시 동기화 재수행
       if (!isDemoMode && sheetUrl) {
         setTimeout(fetchFromSheet, 1000);
       }
@@ -1625,113 +1653,6 @@ function doPost(e) {
     closeModal('manualEntryModal');
     renderAll();
     showToast(`'${deptName.replace(/\[.*?\]\s*/, '')}' 점호가 성공적으로 기록되었습니다.`);
-  };
-
-  window.confirmNaDepartment = async function() {
-    if (!pendingNaDeptName) return;
-
-    const selectedRadio = document.querySelector('input[name="naReason"]:checked');
-    let reason = selectedRadio ? selectedRadio.value : '관리자 열외 처리';
-    if (reason === 'custom') {
-      const customVal = document.getElementById('naCustomReasonInput').value.trim();
-      reason = customVal || '기타 관리자 확인 사유';
-    }
-
-    const now = new Date();
-    const todayYmd = getTodayYMD();
-    const timeOnly = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-    const fullTimestampStr = `${todayYmd} ${timeOnly}`;
-
-    const syncToSheet = document.getElementById('syncNaToSheetCheck').checked;
-    const confirmBtn = document.getElementById('confirmNaBtn');
-    const spinner = document.getElementById('confirmNaBtnSpinner');
-    const btnLabel = document.getElementById('confirmNaBtnLabel');
-
-    if (syncToSheet && sheetUrl && !isDemoMode) {
-      if (spinner) spinner.classList.remove('hidden');
-      if (btnLabel) btnLabel.innerText = "시트 전송 중...";
-      if (confirmBtn) confirmBtn.disabled = true;
-
-      try {
-        const payload = {
-          timestamp: fullTimestampStr,
-          dept: pendingNaDeptName,
-          submitter: "관리자(N/A)",
-          empTotal: 0,
-          empDone: 0,
-          guestTotal: 0,
-          guestDone: 0,
-          eTotal: 0,
-          eDone: 0,
-          gTotal: 0,
-          gDone: 0,
-          note: `[N/A 열외] ${reason}`
-        };
-
-        await fetch(sheetUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: {
-            'Content-Type': 'text/plain;charset=utf-8'
-          },
-          body: JSON.stringify(payload)
-        });
-
-      } catch (postErr) {
-        console.warn("구글 시트 POST 전송 실패(로컬 반영 유지):", postErr);
-      } finally {
-        if (spinner) spinner.classList.add('hidden');
-        if (btnLabel) btnLabel.innerText = "N/A 및 0명 보고 확정";
-        if (confirmBtn) confirmBtn.disabled = false;
-      }
-    }
-
-    naDepartments[pendingNaDeptName] = {
-      reason: reason,
-      time: timeOnly
-    };
-    localStorage.setItem('eoc_na_depts', JSON.stringify(naDepartments));
-
-    departmentRecords[pendingNaDeptName] = {
-      dept: pendingNaDeptName,
-      submitter: "관리자(N/A)",
-      eTotal: 0,
-      eDone: 0,
-      gTotal: 0,
-      gDone: 0,
-      note: `[N/A 열외] ${reason}`,
-      updatedAt: timeOnly,
-      rawDate: todayYmd
-    };
-    localStorage.setItem('eoc_dept_records', JSON.stringify(departmentRecords));
-
-    allRawRows.push([
-      fullTimestampStr,
-      pendingNaDeptName,
-      "관리자(N/A)",
-      0, 0, 0, 0,
-      `[N/A 열외] ${reason}`
-    ]);
-    localStorage.setItem('eoc_raw_rows', JSON.stringify(allRawRows));
-
-    closeModal('naModal');
-    renderAll();
-    showToast(`'${pendingNaDeptName.replace(/\[.*?\]\s*/, '')}' N/A (인원 0명) 보고가 시트 및 현황판에 반영되었습니다.`);
-  };
-
-  window.cancelNaDepartment = function(deptName) {
-    if (naDepartments[deptName]) {
-      delete naDepartments[deptName];
-      localStorage.setItem('eoc_na_depts', JSON.stringify(naDepartments));
-
-      if (departmentRecords[deptName] && departmentRecords[deptName].submitter === "관리자(N/A)") {
-        delete departmentRecords[deptName];
-        localStorage.setItem('eoc_dept_records', JSON.stringify(departmentRecords));
-      }
-
-      renderAll();
-      showToast(`'${deptName.replace(/\[.*?\]\s*/, '')}' N/A 처리가 해제되었습니다.`);
-    }
   };
 
   window.toggleGroup = function(groupName) {
